@@ -1,0 +1,9 @@
+{
+  "name": "expo-alarm-kit",
+  "version": "1.0.0",
+  "description": "Local Expo module for AlarmKit",
+  "main": "index.ts",
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

@@ -8,7 +8,19 @@
     "scheme": "wakey",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "deploymentTarget": "26.0",
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSAlarmKitUsageDescription": "This application requires permission to schedule and manage alarms.",
+        "NSSupportsLiveActivities": true,
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.tsouvili.wakey",
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.tsouvili.wakey"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +37,7 @@
     },
     "plugins": [
       "expo-router",
+      "./src/plugins/withAlarmKit.js",
       [
         "expo-splash-screen",
         {
@@ -34,11 +47,54 @@
             "imageWidth": 76
           }
         }
+      ],
+      [
+        "expo-widgets",
+        {
+          "groupIdentifier": "group.com.tsouvili.wakey",
+          "enablePushNotifications": false,
+          "widgets": [
+            {
+              "name": "NextAlarmWidget",
+              "displayName": "Next Alarm",
+              "description": "Displays your next scheduled alarm.",
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "accessoryRectangular",
+                "accessoryInline"
+              ]
+            }
+          ]
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "ExpoWidgetsTarget",
+                  "bundleIdentifier": "com.tsouvili.wakey.ExpoWidgetsTarget",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.tsouvili.wakey"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "efeeed15-c103-43f1-885f-fb6ac93b6791"
+      }
     }
   }
 }
