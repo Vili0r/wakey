@@ -10,7 +10,7 @@ export default function Layout() {
             <Stack.Screen
                 name="index"
                 options={{
-                    title: 'Explore',
+                    title: 'Settings',
                     headerStyle: { backgroundColor: theme.background },
                     headerShadowVisible: false,
                     headerTransparent: true,

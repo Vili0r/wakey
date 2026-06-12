@@ -10,7 +10,8 @@ import {
   Text,
   TouchableOpacity,
   useWindowDimensions,
-  View
+  View,
+  useColorScheme
 } from 'react-native';
 import Animated, {
   Easing,
@@ -506,7 +507,8 @@ function AlarmCard({
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const [isDark, setIsDark] = useState(true);
+  const systemScheme = useColorScheme();
+  const isDark = systemScheme !== 'light';
   const [alarms, setAlarms] = useState(() => alarmStore.getAlarms());
   const [now, setNow] = useState(() => new Date());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -630,11 +632,6 @@ export default function HomeScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     alarmStore.toggleAlarm(id);
   };
-
-  const addAlarm = (newAlarm: Omit<Alarm, 'id'>) => {
-    alarmStore.addAlarm(newAlarm);
-  };
-
   function greeting(now: Date) {
       const h = now.getHours();
       if (h < 5) return 'Still up?';
@@ -816,12 +813,13 @@ const styles = StyleSheet.create({
     fontSize: 92,
     lineHeight: 98,
     letterSpacing: -2,
+    paddingHorizontal: 16,
   },
   heroPeriod: {
     fontFamily: 'Sora_600SemiBold',
     fontSize: 16,
     letterSpacing: 1.5,
-    marginLeft: 8,
+    marginLeft: -4,
     marginBottom: 18,
   },
   heroSub: {
@@ -869,6 +867,7 @@ const styles = StyleSheet.create({
     fontFamily: 'InstrumentSerif_400Regular_Italic',
     fontSize: 34,
     letterSpacing: -0.5,
+    paddingHorizontal: 8,
   },
   cardPeriod: {
     fontFamily: 'Sora_500Medium',

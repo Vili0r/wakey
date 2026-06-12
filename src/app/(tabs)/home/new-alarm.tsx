@@ -777,6 +777,7 @@ const styles = StyleSheet.create({
     fontFamily: 'InstrumentSerif_400Regular_Italic',
     fontSize: 44,
     letterSpacing: -1,
+    paddingHorizontal: 10,
   },
   wheelColon: {
     fontFamily: 'InstrumentSerif_400Regular_Italic',
