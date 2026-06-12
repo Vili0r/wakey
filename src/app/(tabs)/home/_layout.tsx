@@ -1,5 +1,4 @@
 import { useTheme } from '@/hooks/use-theme';
-import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Stack } from "expo-router";
 
 export default function Layout() {
@@ -10,13 +9,20 @@ export default function Layout() {
             <Stack.Screen
                 name="index"
                 options={{
-                    title: '',
-                    headerStyle: { backgroundColor: theme.background },
-                    headerShadowVisible: false,
-                    headerTransparent: true,
-                    headerLargeStyle: { backgroundColor: "transparent" },
-                    headerBlurEffect: isLiquidGlassAvailable() ? undefined : "dark",
+                    headerShown: false,
                 }}
+            />
+            <Stack.Screen 
+                name="new-alarm" 
+                options={{ 
+                    contentStyle: { backgroundColor: theme.background },
+                    headerShown: true,
+                    presentation: 'formSheet',
+                    sheetAllowedDetents: [0.75],
+                    sheetGrabberVisible: true,
+                    headerTransparent: true,
+                    headerTitle: "New Alarm",
+                }} 
             />
         </Stack>
     );

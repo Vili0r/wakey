@@ -13,12 +13,13 @@ export const Colors = {
     // Core neutrals
     text: '#181C2E',
     textSecondary: '#60646C',
-    textFaint: '#9DA1AC',
+    textFaint: 'rgba(24, 28, 46, 0.34)',
     background: '#F1F4FA',
     backgroundEdge: '#E8EDF7',
     backgroundElement: '#FFFFFF',
     backgroundSelected: '#E0E1E6',
     border: 'rgba(24, 28, 46, 0.06)',
+    textDim: 'rgba(24, 28, 46, 0.58)',
  
     // Sunrise accent
     accent: '#F59A3E',       // amber
@@ -42,6 +43,7 @@ export const Colors = {
     backgroundElement: '#171A2E',
     backgroundSelected: '#2E3135',
     border: 'rgba(235, 238, 255, 0.07)',
+    textDim: 'rgba(238, 240, 255, 0.56)',
  
     // Sunrise accent
     accent: '#FFB45C',       // amber
@@ -96,3 +98,44 @@ export const Spacing = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+
+export const THEMES = {
+  dark: {
+    name: 'dark',
+    bg: Colors.dark.background,
+    bgEdge: Colors.dark.backgroundEdge,
+    surface: Colors.dark.backgroundElement,
+    surfaceBorder: Colors.dark.border,
+    text: Colors.dark.text,
+    textDim: Colors.dark.textDim,
+    textFaint: Colors.dark.textFaint,
+    accent: Colors.dark.accent,
+    accentDeep: Colors.dark.accentDeep,
+    arcTrack: Colors.dark.arcTrack,
+    chipBg: Colors.dark.accentSoft,
+    chipText: Colors.dark.accentText,
+    toggleOff: Colors.dark.toggleOff,
+    fabText: Colors.dark.onAccent,
+    horizon: Colors.dark.horizon,
+  },
+  light: {
+    name: 'light',
+    bg: Colors.light.background,
+    bgEdge: Colors.light.backgroundEdge,
+    surface: Colors.light.backgroundElement,
+    surfaceBorder: Colors.light.border,
+    text: Colors.light.text,
+    textDim: Colors.light.textDim,
+    textFaint: Colors.light.textFaint,
+    accent: Colors.light.accent,
+    accentDeep: Colors.light.accentDeep,
+    arcTrack: Colors.light.arcTrack,
+    chipBg: Colors.light.accentSoft,
+    chipText: Colors.light.accentText,
+    toggleOff: Colors.light.toggleOff,
+    fabText: Colors.light.onAccent,
+    horizon: Colors.light.horizon,
+  },
+} as const;
+
+export type Theme = typeof THEMES[keyof typeof THEMES];

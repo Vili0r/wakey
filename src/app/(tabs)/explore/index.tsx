@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ExternalLink } from '@/components/external-link';
@@ -37,6 +37,13 @@ export default function TabTwoScreen() {
       style={[styles.scrollView, { backgroundColor: theme.background }]}
       contentInset={insets}
       contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
+        <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                    {/* <ThemeButton
+                        isDark={isDark}
+                        onPress={() => setIsDark((d) => !d)}
+                        theme={theme}
+                    /> */}
+                    </View>
       <ThemedView style={styles.container}>
         <ThemedView style={styles.titleContainer}>
           <ThemedText type="subtitle">Explore</ThemedText>

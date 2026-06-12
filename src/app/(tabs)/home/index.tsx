@@ -1,42 +1,14 @@
-import { AddAlarmModal } from '@/components/add-alarm-modal';
-import * as ExpoHaptics from 'expo-haptics';
-
-// Quick dependency-free UUID generator
-const generateUUID = (): string => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-};
-
-// Safe wrapper for environments where ExpoHaptics isn't fully linked
-const Haptics = {
-  impactAsync: async (style: ExpoHaptics.ImpactFeedbackStyle) => {
-    try {
-      await ExpoHaptics.impactAsync(style);
-    } catch {
-      // Haptics not available in this build
-    }
-  },
-  notificationAsync: async (type: ExpoHaptics.NotificationFeedbackType) => {
-    try {
-      await ExpoHaptics.notificationAsync(type);
-    } catch {
-      // Haptics not available in this build
-    }
-  },
-  ImpactFeedbackStyle: ExpoHaptics.ImpactFeedbackStyle,
-  NotificationFeedbackType: ExpoHaptics.NotificationFeedbackType,
-};
+import SFIcon from '@/components/SF-icon';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Link, useNavigation } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   useWindowDimensions,
   View
 } from 'react-native';
@@ -52,279 +24,11 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
 
-// Safe wrapper for AlarmKit in case it's not compiled or available in this build
-let NativeAlarmKit: any = null;
-try {
-  NativeAlarmKit = require('../../../../modules/expo-alarm-kit');
-} catch {
-  console.log('ExpoAlarmKit native module not available in this environment');
-}
-
-// Safe wrapper for widgets/Live Activity
-let widgetsModule: any = null;
-try {
-  widgetsModule = require('../../../../widgets');
-} catch {
-  console.log('Widgets module not available in this environment');
-}
-
-const APP_GROUP_ID = 'group.com.tsouvili.wakey';
-
-const safeAlarmKit = {
-  configure: () => {
-    try {
-      if (NativeAlarmKit?.configure) {
-        NativeAlarmKit.configure(APP_GROUP_ID);
-      }
-    } catch {}
-  },
-  requestAuthorization: () => {
-    try {
-      if (NativeAlarmKit?.requestAuthorization) {
-        return NativeAlarmKit.requestAuthorization().catch(() => 'denied');
-      }
-    } catch {}
-    return Promise.resolve('denied');
-  },
-  scheduleAlarm: (options: any) => {
-    console.log("[Test] safeAlarmKit.scheduleAlarm called. NativeAlarmKit:", NativeAlarmKit);
-    try {
-      if (NativeAlarmKit?.scheduleAlarm) {
-        return NativeAlarmKit.scheduleAlarm(options).catch((err: any) => {
-          console.error("[Test] NativeAlarmKit.scheduleAlarm native call rejected with:", err);
-          return false;
-        });
-      } else {
-        console.warn("[Test] NativeAlarmKit.scheduleAlarm is undefined!");
-      }
-    } catch (e: any) {
-      console.error("[Test] safeAlarmKit.scheduleAlarm exception:", e);
-    }
-    return Promise.resolve(false);
-  },
-  scheduleRepeatingAlarm: (options: any) => {
-    try {
-      if (NativeAlarmKit?.scheduleRepeatingAlarm) {
-        return NativeAlarmKit.scheduleRepeatingAlarm(options).catch(() => false);
-      }
-    } catch {}
-    return Promise.resolve(false);
-  },
-  cancelAlarm: (id: string) => {
-    try {
-      if (NativeAlarmKit?.cancelAlarm) {
-        return NativeAlarmKit.cancelAlarm(id).catch(() => false);
-      }
-    } catch {}
-    return Promise.resolve(false);
-  },
-  getAllAlarms: (): Alarm[] => {
-    try {
-      if (NativeAlarmKit?.getAllAlarms) {
-        const native = NativeAlarmKit.getAllAlarms();
-        if (native && native.length > 0) {
-          return native.map((a: any) => ({
-            id: a.id,
-            hour: a.hour ?? 7,
-            minute: a.minute ?? 0,
-            label: a.title ?? 'Alarm',
-            days: a.weekdays ?? [],
-            challenge: { glyph: '÷', label: 'SOLVE 3 EQUATIONS' }, // default challenge
-            enabled: true,
-            isOneTime: a.type === 'one-time',
-          }));
-        }
-      }
-    } catch {}
-    return [];
-  },
-  getLaunchPayload: () => {
-    try {
-      if (NativeAlarmKit?.getLaunchPayload) {
-        return NativeAlarmKit.getLaunchPayload();
-      }
-    } catch {}
-    return null;
-  },
-  addLaunchPayloadListener: (listener: (event: any) => void) => {
-    try {
-      if (NativeAlarmKit?.addLaunchPayloadListener) {
-        return NativeAlarmKit.addLaunchPayloadListener(listener);
-      }
-    } catch {}
-    return { remove: () => {} };
-  },
-  updateWidgetSnapshot: (activeAlarms: any[]) => {
-    try {
-      if (widgetsModule?.nextAlarmWidget?.updateSnapshot) {
-        if (activeAlarms.length === 0) {
-          widgetsModule.nextAlarmWidget.updateSnapshot({ title: '', timeString: '', hasAlarm: false });
-          return;
-        }
-        
-        let nextAlarm = null;
-        let nextAlarmDate = null;
-        const now = new Date();
-        
-        for (const alarm of activeAlarms) {
-          if (!alarm.enabled) continue;
-          
-          let next = new Date();
-          next.setHours(alarm.hour, alarm.minute, 0, 0);
-          let minDiff = Infinity;
-          let bestDate = new Date(next.getTime() + 7 * 24 * 60 * 60 * 1000);
-          
-          const days = alarm.days && alarm.days.length > 0 ? alarm.days : [0, 1, 2, 3, 4, 5, 6];
-          for (const day of days) {
-            const currentDay = now.getDay();
-            let diff = day - currentDay;
-            if (diff < 0 || (diff === 0 && now.getTime() >= next.getTime())) {
-              diff += 7;
-            }
-            const targetDate = new Date(now.getTime() + diff * 24 * 60 * 60 * 1000);
-            targetDate.setHours(alarm.hour, alarm.minute, 0, 0);
-            const targetDiff = targetDate.getTime() - now.getTime();
-            if (targetDiff < minDiff) {
-              minDiff = targetDiff;
-              bestDate = targetDate;
-            }
-          }
-          
-          if (!nextAlarmDate || bestDate.getTime() < nextAlarmDate.getTime()) {
-            nextAlarmDate = bestDate;
-            nextAlarm = alarm;
-          }
-        }
-        
-        if (nextAlarm && nextAlarmDate) {
-          const options: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
-          const formattedTime = nextAlarmDate.toLocaleTimeString('en-US', options);
-          widgetsModule.nextAlarmWidget.updateSnapshot({
-            title: nextAlarm.label,
-            timeString: formattedTime,
-            hasAlarm: true,
-          });
-        } else {
-          widgetsModule.nextAlarmWidget.updateSnapshot({ title: '', timeString: '', hasAlarm: false });
-        }
-      }
-    } catch {}
-  }
-};
-
-const safeSnoozeActivity = {
-  start: (props: { fireDate: number; title: string }) => {
-    try {
-      if (widgetsModule?.snoozeCountdownActivity?.start) {
-        widgetsModule.snoozeCountdownActivity.start(props);
-      }
-    } catch {}
-  },
-  endAll: () => {
-    try {
-      if (widgetsModule?.snoozeCountdownActivity?.getInstances) {
-        const instances = widgetsModule.snoozeCountdownActivity.getInstances();
-        for (const inst of instances) {
-          inst.end('immediate');
-        }
-      }
-    } catch {}
-  },
-};
-
-/* ------------------------------------------------------------------ */
-/* Theme tokens                                                        */
-/* ------------------------------------------------------------------ */
-
-const THEMES = {
-  dark: {
-    name: 'dark',
-    bg: '#0D0F1E',
-    bgEdge: '#13152A',
-    surface: '#171A2E',
-    surfaceBorder: 'rgba(235, 238, 255, 0.07)',
-    text: '#EEF0FF',
-    textDim: 'rgba(238, 240, 255, 0.56)',
-    textFaint: 'rgba(238, 240, 255, 0.32)',
-    accent: '#FFB45C',
-    accentDeep: '#FF6E50',
-    arcTrack: 'rgba(238, 240, 255, 0.28)',
-    chipBg: 'rgba(255, 180, 92, 0.13)',
-    chipText: '#FFC787',
-    toggleOff: 'rgba(238, 240, 255, 0.14)',
-    fabText: '#1A1206',
-    horizon: 'rgba(255, 180, 92, 0.35)',
-  },
-  light: {
-    name: 'light',
-    bg: '#F1F4FA',
-    bgEdge: '#E8EDF7',
-    surface: '#FFFFFF',
-    surfaceBorder: 'rgba(24, 28, 46, 0.06)',
-    text: '#181C2E',
-    textDim: 'rgba(24, 28, 46, 0.58)',
-    textFaint: 'rgba(24, 28, 46, 0.34)',
-    accent: '#F59A3E',
-    accentDeep: '#F25C3C',
-    arcTrack: 'rgba(24, 28, 46, 0.30)',
-    chipBg: 'rgba(242, 92, 60, 0.09)',
-    chipText: '#D9622E',
-    toggleOff: 'rgba(24, 28, 46, 0.14)',
-    fabText: '#FFFFFF',
-    horizon: 'rgba(242, 92, 60, 0.28)',
-  },
-};
-
-type Theme = typeof THEMES.dark;
-
-/* ------------------------------------------------------------------ */
-/* Mock data — replace with your alarm store                           */
-/* ------------------------------------------------------------------ */
-
-type Challenge = { glyph: string; label: string };
-
-type Alarm = {
-  id: string;
-  hour: number; // 24h
-  minute: number;
-  label: string;
-  days: number[]; // 0 = Sun, empty = one-time
-  challenge: Challenge;
-  enabled: boolean;
-  isOneTime?: boolean; // true for one-time alarms (no repeat days)
-};
-
-const INITIAL_ALARMS: Alarm[] = [
-  {
-    id: generateUUID(),
-    hour: 6,
-    minute: 30,
-    label: 'Weekday wake-up',
-    days: [1, 2, 3, 4, 5],
-    challenge: { glyph: '÷', label: 'SOLVE 3 EQUATIONS' },
-    enabled: true,
-  },
-  {
-    id: generateUUID(),
-    hour: 7,
-    minute: 45,
-    label: 'Slow morning',
-    days: [0, 6],
-    challenge: { glyph: '≈', label: 'SHAKE × 20' },
-    enabled: true,
-  },
-  {
-    id: generateUUID(),
-    hour: 14,
-    minute: 15,
-    label: 'Afternoon reset',
-    days: [1, 3, 5],
-    challenge: { glyph: '◫', label: 'PATTERN RECALL' },
-    enabled: false,
-  },
-];
+import { Theme, THEMES } from '@/constants/theme';
+import { Alarm, alarmStore, Haptics, INITIAL_ALARMS, safeAlarmKit, safeSnoozeActivity, scheduleAlarmNative } from '@/utils/alarm-store';
 
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -371,59 +75,6 @@ function countdownLabel(ms: number) {
   return `RINGS IN ${h}H ${String(m).padStart(2, '0')}M`;
 }
 
-function greeting(now: Date) {
-  const h = now.getHours();
-  if (h < 5) return 'Still up?';
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-/* ------------------------------------------------------------------ */
-/* Native alarm scheduling helper                                      */
-/* ------------------------------------------------------------------ */
-
-/**
- * Schedule an alarm natively. If the alarm has repeat days, uses
- * scheduleRepeatingAlarm(). Otherwise, computes the next occurrence
- * and uses scheduleAlarm() for a one-time alarm.
- */
-function scheduleAlarmNative(alarm: Alarm) {
-  const isOneTime = alarm.isOneTime || !alarm.days || alarm.days.length === 0;
-
-  if (isOneTime) {
-    // Compute the next occurrence of this hour:minute
-    const now = new Date();
-    const target = new Date();
-    target.setHours(alarm.hour, alarm.minute, 0, 0);
-    if (target.getTime() <= now.getTime()) {
-      // Already passed today, schedule for tomorrow
-      target.setDate(target.getDate() + 1);
-    }
-
-    safeAlarmKit.scheduleAlarm({
-      id: alarm.id,
-      date: target.toISOString(),
-      title: alarm.label,
-      launchAppOnDismiss: true,
-      launchAppOnSnooze: false,
-      doSnoozeIntent: true,
-      snoozeDuration: 540,
-    });
-  } else {
-    safeAlarmKit.scheduleRepeatingAlarm({
-      id: alarm.id,
-      hour: alarm.hour,
-      minute: alarm.minute,
-      weekdays: alarm.days,
-      title: alarm.label,
-      launchAppOnDismiss: true,
-      launchAppOnSnooze: false,
-      doSnoozeIntent: true,
-      snoozeDuration: 540,
-    });
-  }
-}
 
 /* ------------------------------------------------------------------ */
 /* Horizon Arc — the signature element                                 */
@@ -579,6 +230,51 @@ function PressScale({
     >
       <Animated.View style={[style, aStyle]}>{children}</Animated.View>
     </Pressable>
+  );
+}
+
+function GlassButton({
+  children,
+  style,
+  isDark,
+  ...props
+}: {
+  children: React.ReactNode;
+  style?: object;
+  isDark: boolean;
+  [key: string]: any;
+}) {
+  const hasGlass = isLiquidGlassAvailable();
+  if (hasGlass) {
+    return (
+      <GlassView isInteractive style={style}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}
+          {...props}
+        >
+          {children}
+        </TouchableOpacity>
+      </GlassView>
+    );
+  }
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      style={[
+        style,
+        {
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
+          borderWidth: 1,
+        },
+      ]}
+      {...props}
+    >
+      {children}
+    </TouchableOpacity>
   );
 }
 
@@ -808,11 +504,13 @@ function AlarmCard({
 /* ------------------------------------------------------------------ */
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [isDark, setIsDark] = useState(true);
-  const [alarms, setAlarms] = useState(INITIAL_ALARMS);
+  const [alarms, setAlarms] = useState(() => alarmStore.getAlarms());
   const [now, setNow] = useState(() => new Date());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const navigation = useNavigation();
 
   // Keep the countdown honest
   useEffect(() => {
@@ -822,12 +520,22 @@ export default function HomeScreen() {
 
   // Refresh alarms from native state
   const refreshAlarms = useCallback(() => {
-    const native = safeAlarmKit.getAllAlarms();
-    if (native.length > 0) {
-      setAlarms(native);
-      safeAlarmKit.updateWidgetSnapshot(native);
-    }
+    setAlarms([...alarmStore.getAlarms()]);
   }, []);
+
+  // Sync alarms when screen is refocused or when store changes
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      refreshAlarms();
+    });
+    return unsubscribe;
+  }, [navigation, refreshAlarms]);
+
+  useEffect(() => {
+    return alarmStore.subscribe(() => {
+      refreshAlarms();
+    });
+  }, [refreshAlarms]);
 
   // Handle launch payload from alarm dismiss/snooze
   const handleLaunchPayload = useCallback((payload: any) => {
@@ -859,8 +567,7 @@ export default function HomeScreen() {
     safeAlarmKit.requestAuthorization().then(() => {
       const native = safeAlarmKit.getAllAlarms();
       if (native.length > 0) {
-        setAlarms(native);
-        safeAlarmKit.updateWidgetSnapshot(native);
+        setAlarms([...alarmStore.getAlarms()]);
       } else {
         // Schedule initial enabled alarms in AlarmKit so they actually fire
         for (const alarm of INITIAL_ALARMS) {
@@ -869,6 +576,7 @@ export default function HomeScreen() {
           }
         }
         safeAlarmKit.updateWidgetSnapshot(INITIAL_ALARMS);
+        setAlarms([...INITIAL_ALARMS]);
       }
 
       // Read cold-launch payload (user tapped dismiss/snooze while app was closed)
@@ -918,216 +626,118 @@ export default function HomeScreen() {
 
   const heroTime = next ? format12h(next.alarm.hour, next.alarm.minute) : null;
 
-  const testAlarm = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const target = new Date(Date.now() + 15 * 1000); // 15 seconds from now
-    const alarmId = generateUUID();
-    
-    // Add to state so it renders
-    const newAlarmItem: Alarm = {
-      id: alarmId,
-      hour: target.getHours(),
-      minute: target.getMinutes(),
-      label: "Test Alarm",
-      days: [],
-      challenge: { glyph: '÷', label: 'SOLVE 3 EQUATIONS' },
-      enabled: true,
-      isOneTime: true,
-    };
-    
-    setAlarms((prev) => {
-      const updated = [...prev, newAlarmItem];
-      safeAlarmKit.updateWidgetSnapshot(updated);
-      return updated;
-    });
-
-    safeAlarmKit.scheduleAlarm({
-      id: alarmId,
-      date: target.toISOString(),
-      title: "Test Alarm",
-      soundName: "",
-      launchAppOnDismiss: true,
-      launchAppOnSnooze: false,
-      doSnoozeIntent: true,
-      snoozeDuration: 10,
-    }).then((res: any) => {
-      console.log("[Test] scheduleAlarm resolved with:", res);
-    });
-  };
-
   const toggleAlarm = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setAlarms((prev) => {
-      const updated = prev.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a));
-      
-      const alarm = updated.find((a) => a.id === id);
-      if (alarm) {
-        if (alarm.enabled) {
-          scheduleAlarmNative(alarm);
-        } else {
-          safeAlarmKit.cancelAlarm(alarm.id);
-        }
-      }
-      
-      safeAlarmKit.updateWidgetSnapshot(updated);
-      return updated;
-    });
+    alarmStore.toggleAlarm(id);
   };
 
   const addAlarm = (newAlarm: Omit<Alarm, 'id'>) => {
-    setAlarms((prev) => {
-      const id = generateUUID();
-      const isOneTime = !newAlarm.days || newAlarm.days.length === 0;
-      const alarmItem: Alarm = {
-        id,
-        ...newAlarm,
-        isOneTime,
-      };
-      const updated = [...prev, alarmItem];
-      
-      if (alarmItem.enabled) {
-        scheduleAlarmNative(alarmItem);
-      }
-      
-      safeAlarmKit.updateWidgetSnapshot(updated);
-      return updated;
-    });
+    alarmStore.addAlarm(newAlarm);
   };
 
+  function greeting(now: Date) {
+      const h = now.getHours();
+      if (h < 5) return 'Still up?';
+      if (h < 12) return 'Good morning';
+      if (h < 18) return 'Good afternoon';
+      return 'Good evening';
+  }
+
   return (
-    <Animated.View style={[styles.root, bgStyle]}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <Animated.View
-          entering={FadeInDown.springify().damping(18)}
-          style={styles.header}
+    <>
+      <Animated.View style={[styles.root, bgStyle]}>
+        <ScrollView
+          contentContainerStyle={[styles.scroll, { marginTop: insets.top - 50}]}
+          showsVerticalScrollIndicator={false}
         >
-          <View>
-            <Text style={[styles.greeting, { color: theme.textDim }]}>
-              {greeting(now)}
-            </Text>
-            <Text style={[styles.brand, { color: theme.text }]}>Dawned</Text>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-            <Pressable
-              onPress={testAlarm}
-              style={{
-                backgroundColor: theme.accent,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: 12,
-              }}
-            >
-              <Text style={{ color: theme.fabText, fontSize: 12, fontFamily: 'Sora_600SemiBold' }}>
-                TEST 15S
+          {/* Custom inline header (without native translucent glass component) */}
+          <View style={styles.customHeader}>
+            <View>
+              <Text style={[styles.greeting, { color: theme.textDim }]}>
+                {greeting(now)}
               </Text>
-            </Pressable>
-            <ThemeButton
-              isDark={isDark}
-              onPress={() => setIsDark((d) => !d)}
-              theme={theme}
+              <Text style={[styles.brand, { color: theme.text }]}>Dawned</Text>
+            </View>
+            <Link href="/home/new-alarm" asChild>
+              <GlassButton isDark={isDark} style={styles.headerRightBtnGlass}>
+                <SFIcon name="alarm" size={22} color={theme.accent} />
+              </GlassButton>
+            </Link>
+          </View>
+          {/* Hero — next alarm */}
+          <Animated.View
+            entering={FadeInDown.delay(60).springify().damping(18)}
+            style={styles.hero}
+          >
+            {next && heroTime ? (
+              <>
+                <Text style={[styles.eyebrow, { color: theme.textFaint }]}>
+                  {countdownLabel(next.ms)}
+                </Text>
+                <View style={styles.heroTimeRow}>
+                  <Text style={[styles.heroTime, { color: theme.text }]}>
+                    {heroTime.time}
+                  </Text>
+                  <Text style={[styles.heroPeriod, { color: theme.accentDeep }]}>
+                    {heroTime.period}
+                  </Text>
+                </View>
+                <Text style={[styles.heroSub, { color: theme.textDim }]}>
+                  {next.alarm.label} · {next.alarm.challenge.label.toLowerCase()} to
+                  silence it
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.eyebrow, { color: theme.textFaint }]}>
+                  NO ALARMS SET
+                </Text>
+                <View style={styles.heroTimeRow}>
+                  <Text style={[styles.heroTime, { color: theme.textFaint }]}>
+                    --:--
+                  </Text>
+                </View>
+                <Text style={[styles.heroSub, { color: theme.textDim }]}>
+                  The horizon is clear. Set one below.
+                </Text>
+              </>
+            )}
+
+            <HorizonArc width={width - 24} progress={progress} theme={theme} />
+
+            {/* Horizon line */}
+            <LinearGradient
+              colors={['transparent', theme.horizon, 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.horizonLine}
             />
+          </Animated.View>
+
+          {/* Alarm list */}
+          <View style={styles.listHeaderRow}>
+            <Text style={[styles.listHeader, { color: theme.textFaint }]}>
+              YOUR ALARMS
+            </Text>
+            <Text style={[styles.listHeader, { color: theme.textFaint }]}>
+              {alarms.filter((a) => a.enabled).length} ON
+            </Text>
           </View>
-        </Animated.View>
 
-        {/* Hero — next alarm */}
-        <Animated.View
-          entering={FadeInDown.delay(60).springify().damping(18)}
-          style={styles.hero}
-        >
-          {next && heroTime ? (
-            <>
-              <Text style={[styles.eyebrow, { color: theme.textFaint }]}>
-                {countdownLabel(next.ms)}
-              </Text>
-              <View style={styles.heroTimeRow}>
-                <Text style={[styles.heroTime, { color: theme.text }]}>
-                  {heroTime.time}
-                </Text>
-                <Text style={[styles.heroPeriod, { color: theme.accentDeep }]}>
-                  {heroTime.period}
-                </Text>
-              </View>
-              <Text style={[styles.heroSub, { color: theme.textDim }]}>
-                {next.alarm.label} · {next.alarm.challenge.label.toLowerCase()} to
-                silence it
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text style={[styles.eyebrow, { color: theme.textFaint }]}>
-                NO ALARMS SET
-              </Text>
-              <View style={styles.heroTimeRow}>
-                <Text style={[styles.heroTime, { color: theme.textFaint }]}>
-                  --:--
-                </Text>
-              </View>
-              <Text style={[styles.heroSub, { color: theme.textDim }]}>
-                The horizon is clear. Set one below.
-              </Text>
-            </>
-          )}
+          {alarms.map((alarm, i) => (
+            <AlarmCard
+              key={alarm.id}
+              alarm={alarm}
+              theme={theme}
+              index={i}
+              onToggle={() => toggleAlarm(alarm.id)}
+            />
+          ))}
 
-          <HorizonArc width={width - 24} progress={progress} theme={theme} />
-
-          {/* Horizon line */}
-          <LinearGradient
-            colors={['transparent', theme.horizon, 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.horizonLine}
-          />
-        </Animated.View>
-
-        {/* Alarm list */}
-        <View style={styles.listHeaderRow}>
-          <Text style={[styles.listHeader, { color: theme.textFaint }]}>
-            YOUR ALARMS
-          </Text>
-          <Text style={[styles.listHeader, { color: theme.textFaint }]}>
-            {alarms.filter((a) => a.enabled).length} ON
-          </Text>
-        </View>
-
-        {alarms.map((alarm, i) => (
-          <AlarmCard
-            key={alarm.id}
-            alarm={alarm}
-            theme={theme}
-            index={i}
-            onToggle={() => toggleAlarm(alarm.id)}
-          />
-        ))}
-
-        <View style={{ height: 120 }} />
-      </ScrollView>
-
-      {/* FAB to Add Alarm */}
-      <View style={styles.fabWrap}>
-        <PressScale
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setIsAddModalOpen(true);
-          }}
-          style={[styles.fab, { backgroundColor: theme.accent }]}
-        >
-          <Text style={[styles.fabPlus, { color: theme.fabText }]}>+</Text>
-          <Text style={[styles.fabText, { color: theme.fabText }]}>ADD ALARM</Text>
-        </PressScale>
-      </View>
-
-      {/* Add Alarm Bottom Sheet Modal */}
-      <AddAlarmModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onSave={addAlarm}
-        theme={theme}
-      />
-    </Animated.View>
+          <View style={{ height: 120 }} />
+        </ScrollView>
+      </Animated.View>
+    </>
   );
 }
 
@@ -1138,16 +748,35 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: {
-    paddingTop: Platform.OS === 'ios' ? 72 : 56,
     paddingHorizontal: 20,
   },
-
   /* Header */
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 28,
+  },
+  customHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 4,
+  },
+  headerRightBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerRightBtnGlass: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   greeting: {
     fontFamily: 'Sora_400Regular',
