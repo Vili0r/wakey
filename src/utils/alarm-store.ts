@@ -1,3 +1,6 @@
+import { db } from '@/db/db';
+import { alarms as alarmsTable } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import * as ExpoHaptics from 'expo-haptics';
 
 // Safe wrapper for environments where ExpoHaptics isn't fully linked
@@ -88,6 +91,19 @@ export const generateUUID = (): string => {
     return v.toString(16);
   });
 };
+
+export function dbIdToUUID(id: string | number): string {
+  const hex = Number(id).toString(16).padStart(12, '0');
+  return `00000000-0000-4000-8000-${hex}`;
+}
+
+export function uuidToDbId(uuid: string): number | null {
+  if (uuid.startsWith('00000000-0000-4000-8000-')) {
+    const hex = uuid.split('-').pop();
+    if (hex) return parseInt(hex, 16);
+  }
+  return null;
+}
 
 export const safeAlarmKit = {
   configure: () => {
@@ -263,7 +279,7 @@ export function scheduleAlarmNative(alarm: Alarm) {
     }
 
     safeAlarmKit.scheduleAlarm({
-      id: alarm.id,
+      id: dbIdToUUID(alarm.id),
       date: target.toISOString(),
       title: alarm.label,
       launchAppOnDismiss: true,
@@ -273,7 +289,7 @@ export function scheduleAlarmNative(alarm: Alarm) {
     });
   } else {
     safeAlarmKit.scheduleRepeatingAlarm({
-      id: alarm.id,
+      id: dbIdToUUID(alarm.id),
       hour: alarm.hour,
       minute: alarm.minute,
       weekdays: alarm.days,
@@ -286,65 +302,201 @@ export function scheduleAlarmNative(alarm: Alarm) {
   }
 }
 
-let alarmsInMemory: Alarm[] = [...INITIAL_ALARMS];
+export const CHALLENGE_MAPPING: Record<string, { glyph: string; label: string }> = {
+  math: { glyph: '÷', label: 'SOLVE 3 EQUATIONS' },
+  shake: { glyph: '≈', label: 'SHAKE × 20' },
+  pattern: { glyph: '◫', label: 'PATTERN RECALL' },
+  steps: { glyph: '∴', label: 'STEPS × 15' },
+};
+
+export function mapDbToUiAlarm(dbAlarm: any): Alarm {
+  const challengeId = dbAlarm.challenge || 'math';
+  const mappedChallenge = CHALLENGE_MAPPING[challengeId] || CHALLENGE_MAPPING.math;
+  
+  let parsedDays = dbAlarm.days;
+  if (typeof parsedDays === 'string') {
+    try { parsedDays = JSON.parse(parsedDays); }
+    catch { parsedDays = []; }
+  } else if (!parsedDays) {
+    parsedDays = [];
+  }
+
+  return {
+    id: String(dbAlarm.id),
+    hour: dbAlarm.hour,
+    minute: dbAlarm.minute,
+    label: dbAlarm.label,
+    days: parsedDays,
+    challenge: mappedChallenge,
+    enabled: !!dbAlarm.enabled,
+    isOneTime: !parsedDays || parsedDays.length === 0,
+  };
+}
+
+export function getChallengeId(challenge: { glyph: string; label: string }): 'math' | 'shake' | 'pattern' | 'steps' {
+  if (challenge.glyph === '≈') return 'shake';
+  if (challenge.glyph === '◫') return 'pattern';
+  if (challenge.glyph === '∴') return 'steps';
+  return 'math';
+}
+
+let alarmsInMemory: Alarm[] = [];
 let listeners: (() => void)[] = [];
 
+export async function initAlarmsFromDb() {
+  try {
+    const dbAlarms = await db.select().from(alarmsTable);
+    alarmsInMemory = dbAlarms.map(mapDbToUiAlarm);
+    safeAlarmKit.updateWidgetSnapshot(alarmsInMemory);
+  } catch (error) {
+    console.error('Error loading alarms from database:', error);
+  }
+}
+
+export async function syncWithNativeState() {
+  try {
+    const nativeAlarms = safeAlarmKit.getAllAlarms();
+    if (!nativeAlarms || nativeAlarms.length === 0) return;
+
+    for (const native of nativeAlarms) {
+      const numericId = uuidToDbId(native.id);
+      if (numericId === null) {
+        // Legacy UUID alarm found! Cancel it and migrate to DB.
+        safeAlarmKit.cancelAlarm(native.id);
+        
+        const challengeId = getChallengeId(native.challenge || { glyph: '÷', label: 'SOLVE 3 EQUATIONS' });
+        const [inserted] = await db.insert(alarmsTable).values({
+          hour: native.hour,
+          minute: native.minute,
+          label: native.label || 'Alarm',
+          days: native.days || [],
+          challenge: challengeId,
+          difficulty: 'standard',
+          enabled: native.enabled,
+        }).returning();
+
+        if (inserted && native.enabled) {
+          scheduleAlarmNative(mapDbToUiAlarm(inserted));
+        }
+        continue;
+      }
+
+      await db
+        .update(alarmsTable)
+        .set({ enabled: native.enabled })
+        .where(eq(alarmsTable.id, numericId));
+    }
+    await initAlarmsFromDb();
+  } catch (error) {
+    console.error('Error syncing with native state:', error);
+  }
+}
+
+export async function seedInitialAlarmsIfEmpty() {
+  try {
+    const existing = await db.select().from(alarmsTable);
+    if (existing.length === 0) {
+      console.log('Seeding initial alarms into SQLite...');
+      for (const initAlarm of INITIAL_ALARMS) {
+        const challengeId = getChallengeId(initAlarm.challenge);
+        const [inserted] = await db.insert(alarmsTable).values({
+          hour: initAlarm.hour,
+          minute: initAlarm.minute,
+          label: initAlarm.label,
+          days: initAlarm.days,
+          challenge: challengeId,
+          difficulty: 'standard',
+          enabled: initAlarm.enabled,
+        }).returning();
+
+        if (initAlarm.enabled && inserted) {
+          scheduleAlarmNative(mapDbToUiAlarm(inserted));
+        }
+      }
+    }
+    await initAlarmsFromDb();
+  } catch (error) {
+    console.error('Error seeding database:', error);
+  }
+}
 export const alarmStore = {
   getAlarms() {
-    const native = safeAlarmKit.getAllAlarms();
-    if (native && native.length > 0) {
-      // Merge to preserve challenge structures which are only kept in JS memory
-      alarmsInMemory = native.map((na) => {
-        const existing = alarmsInMemory.find((a) => a.id === na.id);
-        return {
-          id: na.id,
-          hour: na.hour,
-          minute: na.minute,
-          label: na.label,
-          days: na.days,
-          challenge: existing ? existing.challenge : na.challenge,
-          enabled: na.enabled,
-          isOneTime: na.isOneTime,
-        };
-      });
-    }
     return alarmsInMemory;
   },
 
-  addAlarm(alarmData: Omit<Alarm, 'id'>) {
-    const id = generateUUID();
-    const isOneTime = !alarmData.days || alarmData.days.length === 0;
-    const newAlarm: Alarm = {
-      id,
-      ...alarmData,
-      isOneTime,
-    };
-    alarmsInMemory.push(newAlarm);
+  async addAlarm(alarmData: Omit<Alarm, 'id'> & { difficulty?: 'gentle' | 'standard' | 'brutal' }) {
+    const challengeId = getChallengeId(alarmData.challenge);
+    const [inserted] = await db.insert(alarmsTable).values({
+      hour: alarmData.hour,
+      minute: alarmData.minute,
+      label: alarmData.label,
+      days: alarmData.days,
+      challenge: challengeId,
+      difficulty: alarmData.difficulty || 'standard',
+      enabled: true,
+    }).returning();
+
+    if (!inserted) {
+      throw new Error("Failed to save alarm to database");
+    }
+
+    const newAlarm = mapDbToUiAlarm(inserted);
     if (newAlarm.enabled) {
       scheduleAlarmNative(newAlarm);
     }
+    
+    alarmsInMemory.push(newAlarm);
     safeAlarmKit.updateWidgetSnapshot(alarmsInMemory);
     this.notify();
     return newAlarm;
   },
 
-  toggleAlarm(id: string) {
-    alarmsInMemory = alarmsInMemory.map((a) => {
-      if (a.id === id) {
-        const nextEnabled = !a.enabled;
-        const updated = { ...a, enabled: nextEnabled };
+  async toggleAlarm(id: string) {
+    try {
+      const numericId = Number(id);
+      const [alarm] = await db.select().from(alarmsTable).where(eq(alarmsTable.id, numericId));
+      if (!alarm) return;
+
+      const nextEnabled = !alarm.enabled;
+      await db
+        .update(alarmsTable)
+        .set({ enabled: nextEnabled })
+        .where(eq(alarmsTable.id, numericId));
+
+      // Fetch the updated row manually since .returning() might not be fully supported by the underlying driver
+      const [updated] = await db.select().from(alarmsTable).where(eq(alarmsTable.id, numericId));
+
+      if (updated) {
+        const uiAlarm = mapDbToUiAlarm(updated);
         if (nextEnabled) {
-          scheduleAlarmNative(updated);
+          scheduleAlarmNative(uiAlarm);
         } else {
-          safeAlarmKit.cancelAlarm(id);
+          await safeAlarmKit.cancelAlarm(dbIdToUUID(id));
         }
-        return updated;
+
+        alarmsInMemory = alarmsInMemory.map((a) => (a.id === id ? uiAlarm : a));
+        safeAlarmKit.updateWidgetSnapshot(alarmsInMemory);
+        this.notify();
       }
-      return a;
-    });
-    safeAlarmKit.updateWidgetSnapshot(alarmsInMemory);
-    this.notify();
+    } catch (error) {
+      console.error('[alarmStore.toggleAlarm] Error toggling alarm:', error);
+    }
   },
+
+  async deleteAlarm(id: string) {
+    try {
+      const numericId = Number(id);
+      // Cancel the scheduled native alarm first so it can't fire as an orphan
+      await safeAlarmKit.cancelAlarm(dbIdToUUID(id));
+      await db.delete(alarmsTable).where(eq(alarmsTable.id, numericId));
+
+      alarmsInMemory = alarmsInMemory.filter((a) => a.id !== id);
+      safeAlarmKit.updateWidgetSnapshot(alarmsInMemory);
+      this.notify();
+    } catch (error) {
+      console.error('[alarmStore.deleteAlarm] Error deleting alarm:', error);
+    }
+},
 
   subscribe(listener: () => void) {
     listeners.push(listener);

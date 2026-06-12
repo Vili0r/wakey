@@ -70,7 +70,9 @@
         }
       ],
       "expo-status-bar",
-      "expo-font"
+      "expo-font",
+      "expo-sqlite",
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,

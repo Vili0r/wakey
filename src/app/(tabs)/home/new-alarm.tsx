@@ -1,6 +1,11 @@
-import { Theme, THEMES } from '@/constants/theme';
+import { THEMES } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { alarmStore, Haptics } from '@/utils/alarm-store';
+import Wheel, { WHEEL_PAD, ITEM_H } from '@/components/wheel';
+import Segmented from '@/components/segmented';
+import DayPill from '@/components/day-pill';
+import ChallengeCard from '@/components/challenge-card';
+import { ringsIn } from '@/utils/time';
 import {
     InstrumentSerif_400Regular_Italic,
     useFonts,
@@ -13,7 +18,7 @@ import {
 import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     Platform,
     Pressable,
@@ -24,16 +29,13 @@ import {
     View,
 } from 'react-native';
 import Animated, {
-    Extrapolation,
     FadeInDown,
     interpolate,
-    interpolateColor,
-    SharedValue,
-    useAnimatedScrollHandler,
     useAnimatedStyle,
     useSharedValue,
     withSpring
 } from 'react-native-reanimated';
+
 
 /* ------------------------------------------------------------------ */
 /* Data                                                                */
@@ -92,310 +94,6 @@ const DIFFICULTY_LABELS: Record<(typeof DIFFICULTIES)[number], string> = {
 };
 
 /* ------------------------------------------------------------------ */
-/* Wheel picker                                                        */
-/* ------------------------------------------------------------------ */
-
-const ITEM_H = 52;
-const VISIBLE = 5; // odd number; 2 above + selected + 2 below
-const WHEEL_H = ITEM_H * VISIBLE;
-const WHEEL_PAD = (WHEEL_H - ITEM_H) / 2;
-
-function WheelItem({
-  index,
-  label,
-  scrollY,
-  theme,
-}: {
-  index: number;
-  label: string;
-  scrollY: SharedValue<number>;
-  theme: Theme;
-}) {
-  const aStyle = useAnimatedStyle(() => {
-    const center = index * ITEM_H;
-    const d = scrollY.value - center; // distance from centerline, px
-    return {
-      opacity: interpolate(
-        Math.abs(d),
-        [0, ITEM_H, ITEM_H * 2],
-        [1, 0.38, 0.14],
-        Extrapolation.CLAMP,
-      ),
-      transform: [
-        {
-          scale: interpolate(
-            Math.abs(d),
-            [0, ITEM_H, ITEM_H * 2],
-            [1, 0.78, 0.6],
-            Extrapolation.CLAMP,
-          ),
-        },
-        {
-          rotateX: `${interpolate(
-            d,
-            [-ITEM_H * 2, 0, ITEM_H * 2],
-            [-32, 0, 32],
-            Extrapolation.CLAMP,
-          )}deg`,
-        },
-      ],
-    };
-  });
-
-  return (
-    <Animated.View style={[styles.wheelItem, aStyle]}>
-      <Text style={[styles.wheelDigit, { color: theme.text }]}>{label}</Text>
-    </Animated.View>
-  );
-}
-
-function Wheel({
-  values,
-  initialIndex,
-  onChange,
-  theme,
-  width,
-}: {
-  values: string[];
-  initialIndex: number;
-  onChange: (index: number) => void;
-  theme: Theme;
-  width: number;
-}) {
-  const scrollY = useSharedValue(initialIndex * ITEM_H);
-  const ref = useRef<Animated.ScrollView>(null);
-
-  const onScroll = useAnimatedScrollHandler({
-    onScroll: (e) => {
-      scrollY.value = e.contentOffset.y;
-    },
-  });
-
-  return (
-    <Animated.ScrollView
-      ref={ref}
-      style={{ height: WHEEL_H, width }}
-      contentContainerStyle={{ paddingVertical: WHEEL_PAD }}
-      showsVerticalScrollIndicator={false}
-      snapToInterval={ITEM_H}
-      decelerationRate="fast"
-      onScroll={onScroll}
-      scrollEventThrottle={16}
-      contentOffset={{ x: 0, y: initialIndex * ITEM_H }}
-      onMomentumScrollEnd={(e) => {
-        const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onChange(Math.min(Math.max(idx, 0), values.length - 1));
-      }}
-    >
-      {values.map((v, i) => (
-        <WheelItem key={`${v}-${i}`} index={i} label={v} scrollY={scrollY} theme={theme} />
-      ))}
-    </Animated.ScrollView>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Segmented control (AM/PM, difficulty)                               */
-/* ------------------------------------------------------------------ */
-
-function Segmented({
-  options,
-  selectedIndex,
-  onChange,
-  theme,
-  width,
-}: {
-  options: string[];
-  selectedIndex: number;
-  onChange: (i: number) => void;
-  theme: Theme;
-  width: number;
-}) {
-  const segW = (width - 8) / options.length;
-  const p = useSharedValue(selectedIndex);
-  useEffect(() => {
-    p.value = withSpring(selectedIndex, { damping: 18, stiffness: 220 });
-  }, [selectedIndex, p]);
-
-  const thumbStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: p.value * segW }],
-  }));
-
-  return (
-    <View
-      style={[
-        styles.segTrack,
-        { width, backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
-      ]}
-    >
-      <Animated.View
-        style={[
-          styles.segThumb,
-          { width: segW, backgroundColor: theme.chipBg, borderColor: theme.accent },
-          thumbStyle,
-        ]}
-      />
-      {options.map((opt, i) => (
-        <Pressable
-          key={opt}
-          style={[styles.segOption, { width: segW }]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onChange(i);
-          }}
-        >
-          <Text
-            style={[
-              styles.segLabel,
-              {
-                color: i === selectedIndex ? theme.chipText : theme.textFaint,
-                fontFamily: i === selectedIndex ? 'Sora_600SemiBold' : 'Sora_500Medium',
-              },
-            ]}
-          >
-            {opt}
-          </Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Day pill                                                            */
-/* ------------------------------------------------------------------ */
-
-function DayPill({
-  letter,
-  active,
-  onPress,
-  theme,
-}: {
-  letter: string;
-  active: boolean;
-  onPress: () => void;
-  theme: Theme;
-}) {
-  const p = useSharedValue(active ? 1 : 0);
-  useEffect(() => {
-    p.value = withSpring(active ? 1 : 0, { damping: 14, stiffness: 260 });
-  }, [active, p]);
-
-  const aStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(p.value, [0, 1], ['transparent', theme.accent]),
-    borderColor: interpolateColor(
-      p.value,
-      [0, 1],
-      [theme.surfaceBorder, theme.accent],
-    ),
-    transform: [{ scale: interpolate(p.value, [0, 0.5, 1], [1, 1.12, 1]) }],
-  }));
-  const tStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(p.value, [0, 1], [theme.textFaint, theme.fabText]),
-  }));
-
-  return (
-    <Pressable onPress={onPress} hitSlop={4}>
-      <Animated.View style={[styles.dayPill, aStyle]}>
-        <Animated.Text style={[styles.dayPillText, tStyle]}>{letter}</Animated.Text>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Challenge card                                                      */
-/* ------------------------------------------------------------------ */
-
-function ChallengeCard({
-  glyph,
-  name,
-  desc,
-  selected,
-  onPress,
-  theme,
-}: {
-  glyph: string;
-  name: string;
-  desc: string;
-  selected: boolean;
-  onPress: () => void;
-  theme: Theme;
-}) {
-  const p = useSharedValue(selected ? 1 : 0);
-  const pressed = useSharedValue(0);
-  useEffect(() => {
-    p.value = withSpring(selected ? 1 : 0, { damping: 16, stiffness: 200 });
-  }, [selected, p]);
-
-  const aStyle = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(
-      p.value,
-      [0, 1],
-      [theme.surfaceBorder, theme.accent],
-    ),
-    backgroundColor: interpolateColor(p.value, [0, 1], [theme.surface, theme.chipBg]),
-    transform: [{ scale: interpolate(pressed.value, [0, 1], [1, 0.97]) }],
-  }));
-
-  return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={() => (pressed.value = withSpring(1, { damping: 20, stiffness: 300 }))}
-      onPressOut={() => (pressed.value = withSpring(0, { damping: 20, stiffness: 300 }))}
-      style={{ flex: 1 }}
-    >
-      <Animated.View style={[styles.challengeCard, aStyle]}>
-        <Text
-          style={[
-            styles.challengeGlyph,
-            { color: selected ? theme.chipText : theme.textFaint },
-          ]}
-        >
-          {glyph}
-        </Text>
-        <Text
-          style={[
-            styles.challengeName,
-            { color: selected ? theme.text : theme.textDim },
-          ]}
-        >
-          {name}
-        </Text>
-        <Text style={[styles.challengeDesc, { color: theme.textFaint }]}>
-          {desc}
-        </Text>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Time helpers                                                        */
-/* ------------------------------------------------------------------ */
-
-function ringsIn(hour24: number, minute: number, days: number[], now: Date) {
-  for (let d = 0; d < 8; d++) {
-    const c = new Date(now);
-    c.setDate(now.getDate() + d);
-    c.setHours(hour24, minute, 0, 0);
-    const dayOk = days.length === 0 || days.includes(c.getDay());
-    if (dayOk && c.getTime() > now.getTime()) {
-      const ms = c.getTime() - now.getTime();
-      const totalMin = Math.round(ms / 60000);
-      const h = Math.floor(totalMin / 60);
-      const m = totalMin % 60;
-      if (h === 0) return `RINGS IN ${m} MIN`;
-      if (h < 24) return `RINGS IN ${h}H ${String(m).padStart(2, '0')}M`;
-      const dd = Math.floor(h / 24);
-      return `RINGS IN ${dd}D ${h % 24}H`;
-    }
-  }
-  return '';
-}
-
-/* ------------------------------------------------------------------ */
 /* Screen                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -424,9 +122,13 @@ export default function CreateAlarmScreen({
     SpaceMono_400Regular,
   });
 
-  const [hourIdx, setHourIdx] = useState(5); // "6"
-  const [minuteIdx, setMinuteIdx] = useState(30);
-  const [isPM, setIsPM] = useState(false);
+  const [hourIdx, setHourIdx] = useState(() => {
+    const h24 = new Date().getHours();
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return h12 - 1;
+  });
+  const [minuteIdx, setMinuteIdx] = useState(() => new Date().getMinutes());
+  const [isPM, setIsPM] = useState(() => new Date().getHours() >= 12);
   const [label, setLabel] = useState('');
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [challengeId, setChallengeId] = useState<string>('math');
@@ -487,6 +189,7 @@ export default function CreateAlarmScreen({
         label: label.trim() || 'Alarm',
         days,
         challenge: mappedChallenge,
+        difficulty,
         enabled: true,
       });
       
@@ -768,47 +471,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
-  wheelItem: {
-    height: ITEM_H,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  wheelDigit: {
-    fontFamily: 'InstrumentSerif_400Regular_Italic',
-    fontSize: 44,
-    letterSpacing: -1,
-    paddingHorizontal: 10,
-  },
   wheelColon: {
     fontFamily: 'InstrumentSerif_400Regular_Italic',
     fontSize: 40,
     marginTop: -6,
-  },
-
-  /* Segmented */
-  segTrack: {
-    flexDirection: 'row',
-    borderRadius: 999,
-    borderWidth: 1,
-    padding: 4,
-    position: 'relative',
-  },
-  segThumb: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    left: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  segOption: {
-    paddingVertical: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segLabel: {
-    fontSize: 12.5,
-    letterSpacing: 0.6,
   },
 
   /* Sections */
@@ -831,18 +497,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  dayPill: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayPillText: {
-    fontFamily: 'Sora_600SemiBold',
-    fontSize: 13,
-  },
 
   /* Label input */
   labelInput: {
@@ -859,26 +513,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginBottom: 10,
-  },
-  challengeCard: {
-    borderRadius: 18,
-    borderWidth: 1.5,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-  },
-  challengeGlyph: {
-    fontFamily: 'SpaceMono_400Regular',
-    fontSize: 20,
-    marginBottom: 8,
-  },
-  challengeName: {
-    fontFamily: 'Sora_600SemiBold',
-    fontSize: 14,
-    marginBottom: 3,
-  },
-  challengeDesc: {
-    fontFamily: 'Sora_400Regular',
-    fontSize: 11.5,
   },
 
   /* Save */
