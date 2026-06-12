@@ -13,7 +13,7 @@ const withAlarmKit = (config) => {
       // Replace platform definition
       podfileContent = podfileContent.replace(
         /platform :ios, .*/,
-        "platform :ios, '26.0'"
+        "platform :ios, '17.0'"
       );
       
       await fs.promises.writeFile(podfilePath, podfileContent, 'utf8');
@@ -51,7 +51,7 @@ const withAlarmKit = (config) => {
       const buildConfig = buildConfigurations[key];
       if (typeof buildConfig === 'object' && buildConfig.buildSettings) {
         if (buildConfig.buildSettings.IPHONEOS_DEPLOYMENT_TARGET) {
-          buildConfig.buildSettings.IPHONEOS_DEPLOYMENT_TARGET = '26.0';
+          buildConfig.buildSettings.IPHONEOS_DEPLOYMENT_TARGET = '17.0';
         }
       }
     }

@@ -1,7 +1,11 @@
-import { requireNativeModule, EventEmitter, Subscription } from 'expo';
+import { requireNativeModule, EventEmitter } from 'expo';
 
 const ExpoAlarmKit = requireNativeModule('ExpoAlarmKit');
-const eventEmitter = new EventEmitter(ExpoAlarmKit);
+const eventEmitter = new EventEmitter(ExpoAlarmKit) as any;
+
+export interface Subscription {
+  remove(): void;
+}
 
 export interface AlarmMetadata {
   id: string;

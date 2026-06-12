@@ -1,4 +1,6 @@
-import { Subscription } from 'expo';
+export interface Subscription {
+  remove(): void;
+}
 
 export default {
   configure(appGroupId: string) {

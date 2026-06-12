@@ -29,7 +29,8 @@ extension Color {
     }
 }
 // 1. Concrete AlarmMetadata conformance
-nonisolated struct AlarmData: AlarmMetadata {
+@available(iOS 26.0, *)
+public struct AlarmData: AlarmMetadata {
     // Empty metadata container conforming to AlarmMetadata
 }
 
@@ -162,7 +163,7 @@ struct AlarmSnoozeHelper {
     // Snooze intent is always background intent, dropping launch-app-on-snooze!
     let secondaryIntent = AlarmSnoozeBackgroundIntent(alarmId: alarmId, snoozeDuration: snoozeDuration, payload: "snooze")
     
-    let finalTintColor: Color = tintColorHex != nil ? Color(hex: tintColorHex!) : .orange
+    let finalTintColor: Color = (tintColorHex != nil && !tintColorHex!.isEmpty) ? Color(hex: tintColorHex!) : .orange
     
     let attributes = AlarmAttributes<AlarmData>(
       presentation: AlarmPresentation(alert: alertPresentation),
@@ -197,7 +198,7 @@ struct AlarmSnoozeHelper {
       "launchAppOnSnooze": launchAppOnSnooze,
       "doSnoozeIntent": true,
       "snoozeDuration": snoozeDuration,
-      "tintColor": tintColorHex
+      "tintColor": tintColorHex ?? ""
     ]
     array.append(record)
     defaults.set(array, forKey: "scheduled_alarms")
@@ -303,7 +304,6 @@ public struct AlarmSnoozeBackgroundIntent: LiveActivityIntent {
 
 
 // 5. Main Module definition mapping to JS
-@available(iOS 26.0, *)
 public class ExpoAlarmKitModule: Module {
   
   // FLAG_APP_GROUP_ID_MATCHING: App Group ID is defined here as a constant.
@@ -375,259 +375,286 @@ public class ExpoAlarmKitModule: Module {
     }
 
     AsyncFunction("requestAuthorization") { (promise: Promise) in
-      Task {
-        do {
-          let state = try await AlarmManager.shared.requestAuthorization()
-          switch state {
-          case .authorized:
-            promise.resolve("authorized")
-          case .denied:
-            promise.resolve("denied")
-          case .notDetermined:
-            promise.resolve("notDetermined")
-          @unknown default:
-            promise.resolve("notDetermined")
+      if #available(iOS 26.0, *) {
+        Task {
+          do {
+            let state = try await AlarmManager.shared.requestAuthorization()
+            switch state {
+            case .authorized:
+              promise.resolve("authorized")
+            case .denied:
+              promise.resolve("denied")
+            case .notDetermined:
+              promise.resolve("notDetermined")
+            @unknown default:
+              promise.resolve("notDetermined")
+            }
+          } catch {
+            promise.reject("ERR_AUTHORIZATION_FAILED", error.localizedDescription)
           }
-        } catch {
-          promise.reject("ERR_AUTHORIZATION_FAILED", error.localizedDescription)
         }
+      } else {
+        promise.resolve("notSupported")
       }
     }
 
     AsyncFunction("scheduleAlarm") { (options: AlarmOptions, promise: Promise) in
-      Task {
-        do {
-          guard let uuid = UUID(uuidString: options.id) else {
-            promise.reject("ERR_INVALID_ID", "Alarm ID must be a valid UUID string")
-            return
-          }
-          
-          let formatter = ISO8601DateFormatter()
-          guard let date = formatter.date(from: options.date) else {
-            promise.reject("ERR_INVALID_DATE", "Date must be an ISO8601 formatted string")
-            return
-          }
-          
-          let schedule = Alarm.Schedule.fixed(date)
-          
-          let stopButtonLabel = LocalizedStringResource(stringLiteral: "Dismiss")
-          let stopButton = AlarmButton(text: stopButtonLabel, textColor: .white, systemImageName: "checkmark.circle")
-          
-          let alertPresentation: AlarmPresentation.Alert
-          
-          let snoozeDuration = options.snoozeDuration ?? 540.0 // Default 9 minutes (540 seconds)
-          let launchAppOnDismiss = options.launchAppOnDismiss
-          let launchAppOnSnooze = options.launchAppOnSnooze
-          
-          // Configure stop/dismiss intents based on foreground launch choice
-          let stopIntent: any LiveActivityIntent
-          if launchAppOnDismiss {
-            stopIntent = AlarmStopOpenAppIntent(alarmId: options.id, payload: "dismiss")
-          } else {
-            stopIntent = AlarmStopBackgroundIntent(alarmId: options.id, payload: "dismiss")
-          }
+      if #available(iOS 26.0, *) {
+        Task {
+          do {
+            guard let uuid = UUID(uuidString: options.id) else {
+              promise.reject("ERR_INVALID_ID", "Alarm ID must be a valid UUID string")
+              return
+            }
+            
+            let formatterWithMs = ISO8601DateFormatter()
+            formatterWithMs.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let formatterWithoutMs = ISO8601DateFormatter()
+            formatterWithoutMs.formatOptions = [.withInternetDateTime]
+            
+            guard let date = formatterWithMs.date(from: options.date) ?? formatterWithoutMs.date(from: options.date) else {
+              promise.reject("ERR_INVALID_DATE", "Date must be an ISO8601 formatted string")
+              return
+            }
+            
+            NSLog("[ExpoAlarmKit] scheduling alarm: ID=%@, Title=%@, Date=%@", options.id, options.title, options.date)
+            let schedule = Alarm.Schedule.fixed(date)
+            
+            let stopButtonLabel = LocalizedStringResource(stringLiteral: "Dismiss")
+            let stopButton = AlarmButton(text: stopButtonLabel, textColor: .white, systemImageName: "checkmark.circle")
+            
+            let alertPresentation: AlarmPresentation.Alert
+            
+            let snoozeDuration = options.snoozeDuration ?? 540.0 // Default 9 minutes (540 seconds)
+            let launchAppOnDismiss = options.launchAppOnDismiss
+            let launchAppOnSnooze = options.launchAppOnSnooze
+            
+            // Configure stop/dismiss intents based on foreground launch choice
+            let stopIntent: any LiveActivityIntent
+            if launchAppOnDismiss {
+              stopIntent = AlarmStopOpenAppIntent(alarmId: options.id, payload: "dismiss")
+            } else {
+              stopIntent = AlarmStopBackgroundIntent(alarmId: options.id, payload: "dismiss")
+            }
 
-          // Configure secondary snooze intent using .custom button behavior
-          var secondaryIntent: (any LiveActivityIntent)? = nil
-          if options.doSnoozeIntent {
-            let secondaryButton = AlarmButton(
-              text: LocalizedStringResource(stringLiteral: "Snooze"),
-              textColor: .white,
-              systemImageName: "clock.arrow.2.circlepath"
+            // Configure secondary snooze intent using .custom button behavior
+            var secondaryIntent: (any LiveActivityIntent)? = nil
+            if options.doSnoozeIntent {
+              let secondaryButton = AlarmButton(
+                text: LocalizedStringResource(stringLiteral: "Snooze"),
+                textColor: .white,
+                systemImageName: "clock.arrow.2.circlepath"
+              )
+              // FLAG_PRESENTATION_CUSTOM_EDIT: Must use secondaryButton and secondaryButtonBehavior: .custom
+              alertPresentation = AlarmPresentation.Alert(
+                title: LocalizedStringResource(stringLiteral: options.title),
+                stopButton: stopButton,
+                secondaryButton: secondaryButton,
+                secondaryButtonBehavior: .custom
+              )
+              // Snooze intent is always background intent, dropping launch-app-on-snooze!
+              secondaryIntent = AlarmSnoozeBackgroundIntent(alarmId: options.id, snoozeDuration: snoozeDuration, payload: "snooze")
+            } else {
+              alertPresentation = AlarmPresentation.Alert(
+                title: LocalizedStringResource(stringLiteral: options.title),
+                stopButton: stopButton
+              )
+            }
+            
+            let finalTintColor: Color = (options.tintColor != nil && !options.tintColor!.isEmpty) ? Color(hex: options.tintColor!) : .orange
+            
+            let attributes = AlarmAttributes<AlarmData>(
+              presentation: AlarmPresentation(alert: alertPresentation),
+              metadata: nil,
+              tintColor: finalTintColor
             )
-            // FLAG_PRESENTATION_CUSTOM_EDIT: Must use secondaryButton and secondaryButtonBehavior: .custom
-            alertPresentation = AlarmPresentation.Alert(
-              title: LocalizedStringResource(stringLiteral: options.title),
-              stopButton: stopButton,
-              secondaryButton: secondaryButton,
-              secondaryButtonBehavior: .custom
+            
+            let soundName = options.soundName ?? ""
+            let configuration = AlarmManager.AlarmConfiguration<AlarmData>(
+              schedule: schedule,
+              attributes: attributes,
+              stopIntent: stopIntent,
+              secondaryIntent: secondaryIntent,
+              sound: !soundName.isEmpty ? .named(soundName) : .default
             )
-            // Snooze intent is always background intent, dropping launch-app-on-snooze!
-            secondaryIntent = AlarmSnoozeBackgroundIntent(alarmId: options.id, snoozeDuration: snoozeDuration, payload: "snooze")
-          } else {
-            alertPresentation = AlarmPresentation.Alert(
-              title: LocalizedStringResource(stringLiteral: options.title),
-              stopButton: stopButton
-            )
+            
+            _ = try await AlarmManager.shared.schedule(id: uuid, configuration: configuration)
+            NSLog("[ExpoAlarmKit] Successfully scheduled alarm ID=%@ natively!", options.id)
+            
+            // Update persistence in UserDefaults
+            var alarms = self.getPersistedAlarms()
+            alarms.removeAll { ($0["id"] as? String) == options.id }
+            
+            let record: [String: Any] = [
+              "id": options.id,
+              "title": options.title,
+              "type": "one-time",
+              "date": options.date,
+              "soundName": soundName,
+              "launchAppOnDismiss": launchAppOnDismiss,
+              "launchAppOnSnooze": launchAppOnSnooze,
+              "doSnoozeIntent": options.doSnoozeIntent,
+              "snoozeDuration": snoozeDuration,
+              "tintColor": options.tintColor ?? ""
+            ]
+            alarms.append(record)
+            self.savePersistedAlarms(alarms)
+            
+            promise.resolve(true)
+          } catch {
+            NSLog("[ExpoAlarmKit] ERROR scheduling alarm: %@", error.localizedDescription)
+            promise.reject("ERR_SCHEDULE_FAILED", error.localizedDescription)
           }
-          
-          let finalTintColor: Color = options.tintColor != nil ? Color(hex: options.tintColor!) : .orange
-          
-          let attributes = AlarmAttributes<AlarmData>(
-            presentation: AlarmPresentation(alert: alertPresentation),
-            metadata: nil,
-            tintColor: finalTintColor
-          )
-          
-          let soundName = options.soundName ?? ""
-          let configuration = AlarmManager.AlarmConfiguration<AlarmData>(
-            schedule: schedule,
-            attributes: attributes,
-            stopIntent: stopIntent,
-            secondaryIntent: secondaryIntent,
-            sound: !soundName.isEmpty ? .named(soundName) : .default
-          )
-          
-          _ = try await AlarmManager.shared.schedule(id: uuid, configuration: configuration)
-          
-          // Update persistence in UserDefaults
-          var alarms = self.getPersistedAlarms()
-          alarms.removeAll { ($0["id"] as? String) == options.id }
-          
-          let record: [String: Any] = [
-            "id": options.id,
-            "title": options.title,
-            "type": "one-time",
-            "date": options.date,
-            "soundName": soundName,
-            "launchAppOnDismiss": launchAppOnDismiss,
-            "launchAppOnSnooze": launchAppOnSnooze,
-            "doSnoozeIntent": options.doSnoozeIntent,
-            "snoozeDuration": snoozeDuration,
-            "tintColor": options.tintColor
-          ]
-          alarms.append(record)
-          self.savePersistedAlarms(alarms)
-          
-          promise.resolve(true)
-        } catch {
-          promise.reject("ERR_SCHEDULE_FAILED", error.localizedDescription)
         }
+      } else {
+        promise.reject("ERR_NOT_SUPPORTED", "AlarmKit is only supported on iOS 26.0 or later")
       }
     }
 
     AsyncFunction("scheduleRepeatingAlarm") { (options: RepeatingAlarmOptions, promise: Promise) in
-      Task {
-        do {
-          guard let uuid = UUID(uuidString: options.id) else {
-            promise.reject("ERR_INVALID_ID", "Alarm ID must be a valid UUID string")
-            return
-          }
-          
-          let relativeTime = Alarm.Schedule.Relative.Time(hour: options.hour, minute: options.minute)
-          
-          let swiftWeekdays = options.weekdays.compactMap { weekdayInt -> Locale.Weekday? in
-            switch weekdayInt {
-            case 0: return .sunday
-            case 1: return .monday
-            case 2: return .tuesday
-            case 3: return .wednesday
-            case 4: return .thursday
-            case 5: return .friday
-            case 6: return .saturday
-            default: return nil
+      if #available(iOS 26.0, *) {
+        Task {
+          do {
+            guard let uuid = UUID(uuidString: options.id) else {
+              promise.reject("ERR_INVALID_ID", "Alarm ID must be a valid UUID string")
+              return
             }
-          }
-          
-          let recurrence = Alarm.Schedule.Relative.Recurrence.weekly(swiftWeekdays)
-          let relativeSchedule = Alarm.Schedule.Relative(time: relativeTime, repeats: recurrence)
-          let schedule = Alarm.Schedule.relative(relativeSchedule)
-          
-          let stopButtonLabel = LocalizedStringResource(stringLiteral: "Dismiss")
-          let stopButton = AlarmButton(text: stopButtonLabel, textColor: .white, systemImageName: "checkmark.circle")
-          
-          let alertPresentation: AlarmPresentation.Alert
-          
-          let snoozeDuration = options.snoozeDuration ?? 540.0 // Default 9 minutes
-          let launchAppOnDismiss = options.launchAppOnDismiss
-          let launchAppOnSnooze = options.launchAppOnSnooze
-          
-          // Configure stop/dismiss intents based on foreground launch choice
-          let stopIntent: any LiveActivityIntent
-          if launchAppOnDismiss {
-            stopIntent = AlarmStopOpenAppIntent(alarmId: options.id, payload: "dismiss")
-          } else {
-            stopIntent = AlarmStopBackgroundIntent(alarmId: options.id, payload: "dismiss")
-          }
+            
+            let relativeTime = Alarm.Schedule.Relative.Time(hour: options.hour, minute: options.minute)
+            
+            let swiftWeekdays = options.weekdays.compactMap { weekdayInt -> Locale.Weekday? in
+              switch weekdayInt {
+              case 0: return .sunday
+              case 1: return .monday
+              case 2: return .tuesday
+              case 3: return .wednesday
+              case 4: return .thursday
+              case 5: return .friday
+              case 6: return .saturday
+              default: return nil
+              }
+            }
+            
+            let recurrence = Alarm.Schedule.Relative.Recurrence.weekly(swiftWeekdays)
+            let relativeSchedule = Alarm.Schedule.Relative(time: relativeTime, repeats: recurrence)
+            let schedule = Alarm.Schedule.relative(relativeSchedule)
+            
+            let stopButtonLabel = LocalizedStringResource(stringLiteral: "Dismiss")
+            let stopButton = AlarmButton(text: stopButtonLabel, textColor: .white, systemImageName: "checkmark.circle")
+            
+            let alertPresentation: AlarmPresentation.Alert
+            
+            let snoozeDuration = options.snoozeDuration ?? 540.0 // Default 9 minutes
+            let launchAppOnDismiss = options.launchAppOnDismiss
+            let launchAppOnSnooze = options.launchAppOnSnooze
+            
+            // Configure stop/dismiss intents based on foreground launch choice
+            let stopIntent: any LiveActivityIntent
+            if launchAppOnDismiss {
+              stopIntent = AlarmStopOpenAppIntent(alarmId: options.id, payload: "dismiss")
+            } else {
+              stopIntent = AlarmStopBackgroundIntent(alarmId: options.id, payload: "dismiss")
+            }
 
-          // Configure secondary snooze intent using .custom button behavior
-          var secondaryIntent: (any LiveActivityIntent)? = nil
-          if options.doSnoozeIntent {
-            let secondaryButton = AlarmButton(
-              text: LocalizedStringResource(stringLiteral: "Snooze"),
-              textColor: .white,
-              systemImageName: "clock.arrow.2.circlepath"
+            // Configure secondary snooze intent using .custom button behavior
+            var secondaryIntent: (any LiveActivityIntent)? = nil
+            if options.doSnoozeIntent {
+              let secondaryButton = AlarmButton(
+                text: LocalizedStringResource(stringLiteral: "Snooze"),
+                textColor: .white,
+                systemImageName: "clock.arrow.2.circlepath"
+              )
+              // FLAG_PRESENTATION_CUSTOM_EDIT: Must use secondaryButton and secondaryButtonBehavior: .custom
+              alertPresentation = AlarmPresentation.Alert(
+                title: LocalizedStringResource(stringLiteral: options.title),
+                stopButton: stopButton,
+                secondaryButton: secondaryButton,
+                secondaryButtonBehavior: .custom
+              )
+              // Snooze intent is always background intent, dropping launch-app-on-snooze!
+              secondaryIntent = AlarmSnoozeBackgroundIntent(alarmId: options.id, snoozeDuration: snoozeDuration, payload: "snooze")
+            } else {
+              alertPresentation = AlarmPresentation.Alert(
+                title: LocalizedStringResource(stringLiteral: options.title),
+                stopButton: stopButton
+              )
+            }
+            
+            let finalTintColor: Color = (options.tintColor != nil && !options.tintColor!.isEmpty) ? Color(hex: options.tintColor!) : .orange
+            
+            let attributes = AlarmAttributes<AlarmData>(
+              presentation: AlarmPresentation(alert: alertPresentation),
+              metadata: nil,
+              tintColor: finalTintColor
             )
-            // FLAG_PRESENTATION_CUSTOM_EDIT: Must use secondaryButton and secondaryButtonBehavior: .custom
-            alertPresentation = AlarmPresentation.Alert(
-              title: LocalizedStringResource(stringLiteral: options.title),
-              stopButton: stopButton,
-              secondaryButton: secondaryButton,
-              secondaryButtonBehavior: .custom
+            
+            let soundName = options.soundName ?? ""
+            let configuration = AlarmManager.AlarmConfiguration<AlarmData>(
+              schedule: schedule,
+              attributes: attributes,
+              stopIntent: stopIntent,
+              secondaryIntent: secondaryIntent,
+              sound: !soundName.isEmpty ? .named(soundName) : .default
             )
-            // Snooze intent is always background intent, dropping launch-app-on-snooze!
-            secondaryIntent = AlarmSnoozeBackgroundIntent(alarmId: options.id, snoozeDuration: snoozeDuration, payload: "snooze")
-          } else {
-            alertPresentation = AlarmPresentation.Alert(
-              title: LocalizedStringResource(stringLiteral: options.title),
-              stopButton: stopButton
-            )
+            
+            _ = try await AlarmManager.shared.schedule(id: uuid, configuration: configuration)
+            
+            // Update persistence in UserDefaults
+            var alarms = self.getPersistedAlarms()
+            alarms.removeAll { ($0["id"] as? String) == options.id }
+            
+            let record: [String: Any] = [
+              "id": options.id,
+              "title": options.title,
+              "type": "repeating",
+              "hour": options.hour,
+              "minute": options.minute,
+              "weekdays": options.weekdays,
+              "soundName": soundName,
+              "launchAppOnDismiss": launchAppOnDismiss,
+              "launchAppOnSnooze": launchAppOnSnooze,
+              "doSnoozeIntent": options.doSnoozeIntent,
+              "snoozeDuration": snoozeDuration,
+              "tintColor": options.tintColor ?? ""
+            ]
+            alarms.append(record)
+            self.savePersistedAlarms(alarms)
+            
+            promise.resolve(true)
+          } catch {
+            promise.reject("ERR_SCHEDULE_FAILED", error.localizedDescription)
           }
-          
-          let finalTintColor: Color = options.tintColor != nil ? Color(hex: options.tintColor!) : .orange
-          
-          let attributes = AlarmAttributes<AlarmData>(
-            presentation: AlarmPresentation(alert: alertPresentation),
-            metadata: nil,
-            tintColor: finalTintColor
-          )
-          
-          let soundName = options.soundName ?? ""
-          let configuration = AlarmManager.AlarmConfiguration<AlarmData>(
-            schedule: schedule,
-            attributes: attributes,
-            stopIntent: stopIntent,
-            secondaryIntent: secondaryIntent,
-            sound: !soundName.isEmpty ? .named(soundName) : .default
-          )
-          
-          _ = try await AlarmManager.shared.schedule(id: uuid, configuration: configuration)
-          
-          // Update persistence in UserDefaults
-          var alarms = self.getPersistedAlarms()
-          alarms.removeAll { ($0["id"] as? String) == options.id }
-          
-          let record: [String: Any] = [
-            "id": options.id,
-            "title": options.title,
-            "type": "repeating",
-            "hour": options.hour,
-            "minute": options.minute,
-            "weekdays": options.weekdays,
-            "soundName": soundName,
-            "launchAppOnDismiss": launchAppOnDismiss,
-            "launchAppOnSnooze": launchAppOnSnooze,
-            "doSnoozeIntent": options.doSnoozeIntent,
-            "snoozeDuration": snoozeDuration,
-            "tintColor": options.tintColor
-          ]
-          alarms.append(record)
-          self.savePersistedAlarms(alarms)
-          
-          promise.resolve(true)
-        } catch {
-          promise.reject("ERR_SCHEDULE_FAILED", error.localizedDescription)
         }
+      } else {
+        promise.reject("ERR_NOT_SUPPORTED", "AlarmKit is only supported on iOS 26.0 or later")
       }
     }
 
     AsyncFunction("cancelAlarm") { (id: String, promise: Promise) in
-      do {
-        guard let uuid = UUID(uuidString: id) else {
-          promise.reject("ERR_INVALID_ID", "Alarm ID must be a valid UUID string")
-          return
+      if #available(iOS 26.0, *) {
+        do {
+          guard let uuid = UUID(uuidString: id) else {
+            promise.reject("ERR_INVALID_ID", "Alarm ID must be a valid UUID string")
+            return
+          }
+          
+          try AlarmManager.shared.cancel(id: uuid)
+          
+          // Update persistence in UserDefaults
+          var alarms = self.getPersistedAlarms()
+          alarms.removeAll { ($0["id"] as? String) == id }
+          self.savePersistedAlarms(alarms)
+          
+          promise.resolve(true)
+        } catch {
+          promise.reject("ERR_CANCEL_FAILED", error.localizedDescription)
         }
-        
-        try AlarmManager.shared.cancel(id: uuid)
-        
-        // Update persistence in UserDefaults
+      } else {
+        // Fallback for older versions: update local storage
         var alarms = self.getPersistedAlarms()
         alarms.removeAll { ($0["id"] as? String) == id }
         self.savePersistedAlarms(alarms)
-        
         promise.resolve(true)
-      } catch {
-        promise.reject("ERR_CANCEL_FAILED", error.localizedDescription)
       }
     }
 

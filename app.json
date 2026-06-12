@@ -8,7 +8,7 @@
     "scheme": "wakey",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "deploymentTarget": "26.0",
+      "deploymentTarget": "17.0",
       "icon": "./assets/expo.icon",
       "infoPlist": {
         "NSAlarmKitUsageDescription": "This application requires permission to schedule and manage alarms.",
@@ -29,7 +29,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.tsouvili.wakey"
     },
     "web": {
       "output": "static",
@@ -67,7 +68,9 @@
             }
           ]
         }
-      ]
+      ],
+      "expo-status-bar",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

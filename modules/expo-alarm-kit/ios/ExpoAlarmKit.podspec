@@ -10,9 +10,10 @@ Pod::Spec.new do |s|
   s.license        = 'MIT'
   s.author         = 'Vilior Cuni'
   s.homepage       = 'https://github.com/viliorcuni/wakey'
-  s.platforms      = { :ios => '26.0' }
+  s.platforms      = { :ios => '17.0' }
   s.source         = { :git => '' }
   s.static_framework = true
+  s.weak_frameworks = 'AlarmKit'
 
   s.dependency 'ExpoModulesCore'
 
