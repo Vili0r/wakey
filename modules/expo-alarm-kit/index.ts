@@ -87,6 +87,10 @@ export function cancelAlarm(id: string): Promise<boolean> {
   return ExpoAlarmKit.cancelAlarm(id);
 }
 
+export function stopAlarm(id: string): Promise<boolean> {
+  return ExpoAlarmKit.stopAlarm(id);
+}
+
 export function getAllAlarms(): AlarmMetadata[] {
   return ExpoAlarmKit.getAllAlarms();
 }

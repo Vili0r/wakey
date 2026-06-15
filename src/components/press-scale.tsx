@@ -10,12 +10,14 @@ import Animated, {
 interface PressScaleProps {
   children: React.ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
   style?: any;
 }
 
 export default function PressScale({
   children,
   onPress,
+  onLongPress,
   style,
 }: PressScaleProps) {
   const pressed = useSharedValue(0);
@@ -36,6 +38,7 @@ export default function PressScale({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
     >

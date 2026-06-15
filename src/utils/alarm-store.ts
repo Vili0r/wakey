@@ -1,7 +1,76 @@
 import { db } from '@/db/db';
-import { alarms as alarmsTable } from '@/db/schema';
+import {
+  alarms as alarmsTable,
+  alarmEvents,
+  streakDays,
+  streakState,
+  ChallengeType,
+  Difficulty,
+  EventOutcome
+} from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import * as ExpoHaptics from 'expo-haptics';
+import { File, Paths } from 'expo-file-system';
+import { stopAlarmSound } from '@/utils/alarm-sound';
+
+// ── Pending-alarm persistence (survives force-quit) ──────────────────
+// Uses a small JSON file rather than a DB row so it can be read
+// synchronously-ish on cold launch before migrations finish.
+
+type PendingAlarmData = {
+  alarmId: string;
+  challenge: string;
+  difficulty: 'gentle' | 'standard' | 'brutal';
+};
+
+const pendingFile = new File(Paths.document, 'pending_alarm.json');
+
+/** Persist that an alarm is unmet. */
+export function markAlarmPending(data: PendingAlarmData): void {
+  try {
+    pendingFile.write(JSON.stringify(data));
+  } catch {}
+}
+
+/** Clear the pending alarm flag (challenge was completed). */
+export function clearAlarmPending(): void {
+  try {
+    if (pendingFile.exists) {
+      pendingFile.delete();
+    }
+  } catch {}
+}
+
+/** Read the pending alarm flag — null if nothing pending. */
+export async function getPendingAlarm(): Promise<PendingAlarmData | null> {
+  try {
+    if (!pendingFile.exists) return null;
+    const raw = pendingFile.textSync();
+    return JSON.parse(raw) as PendingAlarmData;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stop the alarm sound + haptics + end the system alarm/notification.
+ * The ONLY authorised call site is ActiveAlarmOverlay.handleComplete.
+ */
+export function stopAlarm(alarmId?: string): void {
+  // The real alarm experience is the in-app sound — silence it first. This is
+  // the gate's payoff: it only happens on challenge success.
+  try {
+    stopAlarmSound();
+  } catch {}
+  try {
+    // Stop the native alarm too (best-effort; the system may have already
+    // stopped it when the user tapped Dismiss to launch the app).
+    if (alarmId) safeAlarmKit.stopAlarm(alarmId);
+  } catch {}
+  try {
+    safeSnoozeActivity.endAll();
+  } catch {}
+}
 
 // Safe wrapper for environments where ExpoHaptics isn't fully linked
 export const Haptics = {
@@ -52,6 +121,7 @@ export type Alarm = {
   challenge: Challenge;
   enabled: boolean;
   isOneTime?: boolean; // true for one-time alarms (no repeat days)
+  difficulty: Difficulty;
 };
 
 export const INITIAL_ALARMS: Alarm[] = [
@@ -61,8 +131,9 @@ export const INITIAL_ALARMS: Alarm[] = [
     minute: 30,
     label: 'Weekday wake-up',
     days: [1, 2, 3, 4, 5],
-    challenge: { glyph: '÷', label: 'SOLVE 3 EQUATIONS' },
+    challenge: { glyph: '÷', label: 'SOLVE EQUATIONS' },
     enabled: true,
+    difficulty: 'standard',
   },
   {
     id: '2',
@@ -70,8 +141,9 @@ export const INITIAL_ALARMS: Alarm[] = [
     minute: 45,
     label: 'Slow morning',
     days: [0, 6],
-    challenge: { glyph: '≈', label: 'SHAKE × 20' },
+    challenge: { glyph: '≈', label: 'SHAKE' },
     enabled: true,
+    difficulty: 'standard',
   },
   {
     id: '3',
@@ -81,6 +153,7 @@ export const INITIAL_ALARMS: Alarm[] = [
     days: [1, 3, 5],
     challenge: { glyph: '◫', label: 'PATTERN RECALL' },
     enabled: false,
+    difficulty: 'standard',
   },
 ];
 
@@ -153,6 +226,14 @@ export const safeAlarmKit = {
     } catch {}
     return Promise.resolve(false);
   },
+  stopAlarm: (id: string) => {
+    try {
+      if (NativeAlarmKit?.stopAlarm) {
+        return NativeAlarmKit.stopAlarm(id).catch(() => false);
+      }
+    } catch {}
+    return Promise.resolve(false);
+  },
   getAllAlarms: (): Alarm[] => {
     try {
       if (NativeAlarmKit?.getAllAlarms) {
@@ -164,9 +245,10 @@ export const safeAlarmKit = {
             minute: a.minute ?? 0,
             label: a.title ?? 'Alarm',
             days: a.weekdays ?? [],
-            challenge: { glyph: '÷', label: 'SOLVE 3 EQUATIONS' }, // default challenge
+            challenge: CHALLENGE_MAPPING[a.challengeId as string] || CHALLENGE_MAPPING.math,
             enabled: true,
             isOneTime: a.type === 'one-time',
+            difficulty: (a.difficulty as Difficulty) || 'standard',
           }));
         }
       }
@@ -303,10 +385,17 @@ export function scheduleAlarmNative(alarm: Alarm) {
 }
 
 export const CHALLENGE_MAPPING: Record<string, { glyph: string; label: string }> = {
-  math: { glyph: '÷', label: 'SOLVE 3 EQUATIONS' },
-  shake: { glyph: '≈', label: 'SHAKE × 20' },
+  math: { glyph: '÷', label: 'SOLVE EQUATIONS' },
+  shake: { glyph: '≈', label: 'SHAKE' },
   pattern: { glyph: '◫', label: 'PATTERN RECALL' },
-  steps: { glyph: '∴', label: 'STEPS × 15' },
+  steps: { glyph: '∴', label: 'STEPS' },
+  pushups: { glyph: '⤓', label: 'PUSH-UPS' },
+  squats: { glyph: '⇕', label: 'SQUATS' },
+  photo: { glyph: '◎', label: 'SKY PHOTO' },
+  scan: { glyph: '⊡', label: 'CODE HUNT' },
+  'find-item': { glyph: '⊡', label: 'FIND AN ITEM' },
+  bed: { glyph: '▭', label: 'MAKE YOUR BED' },
+  meds: { glyph: '✚', label: 'MEDICATION' },
 };
 
 export function mapDbToUiAlarm(dbAlarm: any): Alarm {
@@ -330,13 +419,30 @@ export function mapDbToUiAlarm(dbAlarm: any): Alarm {
     challenge: mappedChallenge,
     enabled: !!dbAlarm.enabled,
     isOneTime: !parsedDays || parsedDays.length === 0,
+    difficulty: (dbAlarm.difficulty as Difficulty) || 'standard',
   };
 }
 
-export function getChallengeId(challenge: { glyph: string; label: string }): 'math' | 'shake' | 'pattern' | 'steps' {
+export function getChallengeId(challenge: { glyph: string; label: string }): ChallengeType {
+  // First try a direct reverse lookup by matching both glyph and label
+  for (const [id, mapping] of Object.entries(CHALLENGE_MAPPING)) {
+    if (mapping.glyph === challenge.glyph && mapping.label === challenge.label) {
+      return id as ChallengeType;
+    }
+  }
+  // Fall back to glyph-only matching for legacy data
   if (challenge.glyph === '≈') return 'shake';
   if (challenge.glyph === '◫') return 'pattern';
   if (challenge.glyph === '∴') return 'steps';
+  if (challenge.glyph === '⤓') return 'pushups';
+  if (challenge.glyph === '⇕') return 'squats';
+  if (challenge.glyph === '◎') return 'photo';
+  if (challenge.glyph === '▭') return 'bed';
+  if (challenge.glyph === '✚') return 'meds';
+  if (challenge.glyph === '⊡') {
+    if (challenge.label.toUpperCase().includes('FIND')) return 'find-item';
+    return 'scan';
+  }
   return 'math';
 }
 
@@ -364,7 +470,7 @@ export async function syncWithNativeState() {
         // Legacy UUID alarm found! Cancel it and migrate to DB.
         safeAlarmKit.cancelAlarm(native.id);
         
-        const challengeId = getChallengeId(native.challenge || { glyph: '÷', label: 'SOLVE 3 EQUATIONS' });
+        const challengeId = getChallengeId(native.challenge || CHALLENGE_MAPPING.math);
         const [inserted] = await db.insert(alarmsTable).values({
           hour: native.hour,
           minute: native.minute,
@@ -451,6 +557,47 @@ export const alarmStore = {
     return newAlarm;
   },
 
+  async updateAlarm(id: string, alarmData: Omit<Alarm, 'id'> & { difficulty?: 'gentle' | 'standard' | 'brutal' }) {
+    try {
+      const challengeId = getChallengeId(alarmData.challenge);
+      const numericId = Number(id);
+
+      // Cancel the scheduled native alarm first so it can't fire as an orphan
+      await safeAlarmKit.cancelAlarm(dbIdToUUID(id));
+
+      await db
+        .update(alarmsTable)
+        .set({
+          hour: alarmData.hour,
+          minute: alarmData.minute,
+          label: alarmData.label,
+          days: alarmData.days,
+          challenge: challengeId,
+          difficulty: alarmData.difficulty || 'standard',
+          enabled: true, // Auto-enable on edit
+        })
+        .where(eq(alarmsTable.id, numericId));
+
+      const [updated] = await db.select().from(alarmsTable).where(eq(alarmsTable.id, numericId));
+      if (!updated) {
+        throw new Error("Failed to update alarm in database");
+      }
+
+      const updatedAlarm = mapDbToUiAlarm(updated);
+      if (updatedAlarm.enabled) {
+        scheduleAlarmNative(updatedAlarm);
+      }
+
+      alarmsInMemory = alarmsInMemory.map((a) => (a.id === id ? updatedAlarm : a));
+      safeAlarmKit.updateWidgetSnapshot(alarmsInMemory);
+      this.notify();
+      return updatedAlarm;
+    } catch (error) {
+      console.error('[alarmStore.updateAlarm] Error updating alarm:', error);
+      throw error;
+    }
+  },
+
   async toggleAlarm(id: string) {
     try {
       const numericId = Number(id);
@@ -509,3 +656,154 @@ export const alarmStore = {
     listeners.forEach((l) => l());
   },
 };
+
+export function getLocalDayStr(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export async function resolveAlarmAndRecord({
+  alarmId,
+  challenge,
+  difficulty,
+  firedAt,
+  outcome,
+  attempts,
+  snoozeCount,
+}: {
+  alarmId: string;
+  challenge: ChallengeType;
+  difficulty: Difficulty;
+  firedAt: Date;
+  outcome: EventOutcome;
+  attempts: number;
+  snoozeCount: number;
+}) {
+  const resolvedAt = new Date();
+  const durationMs = resolvedAt.getTime() - firedAt.getTime();
+  const localDay = getLocalDayStr(resolvedAt);
+  const numericAlarmId = uuidToDbId(alarmId);
+
+  // 1. Stop the alarm natively
+  await safeAlarmKit.stopAlarm(alarmId);
+
+  // 2. End Live Activities
+  safeSnoozeActivity.endAll();
+
+  // 3. Write alarm event
+  await db.insert(alarmEvents).values({
+    alarmId: numericAlarmId,
+    challenge,
+    difficulty,
+    firedAt,
+    resolvedAt,
+    outcome,
+    durationMs,
+    snoozeCount,
+    attempts,
+    localDay,
+  });
+
+  // 4. Update streaks if the outcome counts toward the streak
+  if (outcome === 'dismissed' || outcome === 'dismissed_assisted') {
+    // Check if streak_days already has this day
+    const [existingDay] = await db
+      .select()
+      .from(streakDays)
+      .where(eq(streakDays.day, localDay));
+
+    if (existingDay) {
+      await db
+        .update(streakDays)
+        .set({
+          beatenCount: existingDay.beatenCount + 1,
+        })
+        .where(eq(streakDays.day, localDay));
+    } else {
+      await db.insert(streakDays).values({
+        day: localDay,
+        beatenCount: 1,
+        firstBeatenAt: resolvedAt,
+      });
+    }
+
+    // Now recalculate streak_state
+    const allDays = await db.select().from(streakDays);
+    const sortedEpochDays = allDays
+      .map((d) => {
+        const [y, mStr, dayNum] = d.day.split('-').map(Number);
+        const date = new Date(y, mStr - 1, dayNum);
+        return Math.round(date.getTime() / (24 * 60 * 60 * 1000));
+      })
+      .sort((a, b) => a - b);
+
+    const uniqueEpochDays = Array.from(new Set(sortedEpochDays));
+
+    let longestStreak = 0;
+    let tempStreak = 0;
+    let prevDay = null;
+
+    for (const epDay of uniqueEpochDays) {
+      if (prevDay === null) {
+        tempStreak = 1;
+      } else if (epDay === prevDay + 1) {
+        tempStreak++;
+      } else {
+        if (tempStreak > longestStreak) {
+          longestStreak = tempStreak;
+        }
+        tempStreak = 1;
+      }
+      prevDay = epDay;
+    }
+    if (tempStreak > longestStreak) {
+      longestStreak = tempStreak;
+    }
+
+    // Calculate current streak
+    let currentStreak = 0;
+    const todayEpoch = Math.round(new Date(resolvedAt.getFullYear(), resolvedAt.getMonth(), resolvedAt.getDate()).getTime() / (24 * 60 * 60 * 1000));
+    
+    if (uniqueEpochDays.length > 0) {
+      const lastEpDay = uniqueEpochDays[uniqueEpochDays.length - 1];
+      if (lastEpDay === todayEpoch || lastEpDay === todayEpoch - 1) {
+        currentStreak = 1;
+        for (let i = uniqueEpochDays.length - 2; i >= 0; i--) {
+          if (uniqueEpochDays[i] === uniqueEpochDays[i + 1] - 1) {
+            currentStreak++;
+          } else {
+            break;
+          }
+        }
+      }
+    }
+
+    const totalBeaten = allDays.reduce((acc, d) => acc + d.beatenCount, 0);
+
+    // Upsert streak_state
+    const [existingState] = await db.select().from(streakState).where(eq(streakState.id, 1));
+    if (existingState) {
+      await db
+        .update(streakState)
+        .set({
+          currentStreak,
+          longestStreak: Math.max(existingState.longestStreak, longestStreak),
+          lastBeatenDay: localDay,
+          totalBeaten,
+          updatedAt: new Date(),
+        })
+        .where(eq(streakState.id, 1));
+    } else {
+      await db.insert(streakState).values({
+        id: 1,
+        currentStreak,
+        longestStreak,
+        lastBeatenDay: localDay,
+        totalBeaten,
+        updatedAt: new Date(),
+      });
+    }
+  }
+}

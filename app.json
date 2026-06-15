@@ -8,12 +8,15 @@
     "scheme": "wakey",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "newArchEnabled": true,
       "deploymentTarget": "17.0",
       "icon": "./assets/expo.icon",
       "infoPlist": {
         "NSAlarmKitUsageDescription": "This application requires permission to schedule and manage alarms.",
+        "NSCameraUsageDescription": "Dawned uses the camera to verify you've completed your wake-up challenge.",
         "NSSupportsLiveActivities": true,
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["audio"]
       },
       "bundleIdentifier": "com.tsouvili.wakey",
       "entitlements": {
@@ -23,6 +26,7 @@
       }
     },
     "android": {
+      "newArchEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -72,7 +76,9 @@
       "expo-status-bar",
       "expo-font",
       "expo-sqlite",
-      "expo-image"
+      "expo-image",
+      "expo-asset",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,

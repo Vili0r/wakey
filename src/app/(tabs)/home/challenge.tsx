@@ -77,6 +77,13 @@ export const CHALLENGES = [
     name: 'Code hunt',
     desc: 'Scan a code across the room',
   },
+  {
+    id: 'find-item',
+    glyph: '⊡',
+    icon: 'camera.viewfinder',
+    name: 'Find an item',
+    desc: 'Spot an everyday object',
+  },
 ] as const;
 
 // Kept for any call sites still reading the standalone map.
@@ -101,8 +108,8 @@ export default function ChallengeSelectScreen() {
 
   const selectChallenge = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.navigate({
-      pathname: '/(tabs)/home/new-alarm',
+    router.dismissTo({
+      pathname: '/home/new-alarm',
       params: { challengeId: id },
     });
   };

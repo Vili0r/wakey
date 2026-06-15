@@ -4,10 +4,10 @@ import SFIcon from '@/components/SF-icon';
 import Wheel, { ITEM_H, WHEEL_PAD } from '@/components/wheel';
 import { THEMES } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { alarmStore, Haptics } from '@/utils/alarm-store';
+import { alarmStore, Haptics, CHALLENGE_MAPPING, getChallengeId } from '@/utils/alarm-store';
 import { ringsIn } from '@/utils/time';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -44,12 +44,7 @@ export type NewAlarm = {
 
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-const CHALLENGE_MAPPING: Record<string, { glyph: string; label: string }> = {
-  math: { glyph: '÷', label: 'SOLVE 3 EQUATIONS' },
-  shake: { glyph: '≈', label: 'SHAKE × 20' },
-  pattern: { glyph: '◫', label: 'PATTERN RECALL' },
-  steps: { glyph: '∴', label: 'STEPS × 15' },
-};
+
 
 const DIFFICULTIES = ['gentle', 'standard', 'brutal'] as const;
 const DIFFICULTY_LABELS: Record<(typeof DIFFICULTIES)[number], string> = {
@@ -79,18 +74,50 @@ export default function CreateAlarmScreen({
   const isDark = propIsDark ?? (systemScheme !== 'light');
   const theme = isDark ? THEMES.dark : THEMES.light;
 
-  const params = useLocalSearchParams<{ challengeId?: string }>();
+  const params = useLocalSearchParams<{ id?: string; challengeId?: string }>();
+  const isEdit = !!params.id;
+  const navigation = useNavigation();
+
+  const editAlarm = useMemo(() => {
+    if (!params.id) return null;
+    return alarmStore.getAlarms().find((a) => a.id === params.id);
+  }, [params.id]);
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerTitle: isEdit ? 'Edit Alarm' : 'New Alarm',
+    });
+  }, [isEdit, navigation]);
 
   const [hourIdx, setHourIdx] = useState(() => {
+    if (editAlarm) {
+      const h12 = editAlarm.hour % 12 === 0 ? 12 : editAlarm.hour % 12;
+      return h12 - 1;
+    }
     const h24 = new Date().getHours();
     const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
     return h12 - 1;
   });
-  const [minuteIdx, setMinuteIdx] = useState(() => new Date().getMinutes());
-  const [isPM, setIsPM] = useState(() => new Date().getHours() >= 12);
-  const [label, setLabel] = useState('');
-  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
-  const [challengeId, setChallengeId] = useState<string>('');
+  const [minuteIdx, setMinuteIdx] = useState(() => {
+    if (editAlarm) return editAlarm.minute;
+    return new Date().getMinutes();
+  });
+  const [isPM, setIsPM] = useState(() => {
+    if (editAlarm) return editAlarm.hour >= 12;
+    return new Date().getHours() >= 12;
+  });
+  const [label, setLabel] = useState(() => {
+    if (editAlarm) return editAlarm.label;
+    return '';
+  });
+  const [days, setDays] = useState<number[]>(() => {
+    if (editAlarm) return editAlarm.days;
+    return [1, 2, 3, 4, 5];
+  });
+  const [challengeId, setChallengeId] = useState<string>(() => {
+    if (editAlarm) return getChallengeId(editAlarm.challenge);
+    return '';
+  });
 
   useEffect(() => {
     if (params.challengeId) {
@@ -98,7 +125,10 @@ export default function CreateAlarmScreen({
     }
   }, [params.challengeId]);
 
-  const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>('standard');
+  const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>(() => {
+    if (editAlarm) return editAlarm.difficulty || 'standard';
+    return 'standard';
+  });
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -158,15 +188,27 @@ export default function CreateAlarmScreen({
         difficulty,
       });
     } else {
-      alarmStore.addAlarm({
-        hour: hour24,
-        minute: minuteIdx,
-        label: label.trim() || 'Alarm',
-        days,
-        challenge: mappedChallenge,
-        difficulty,
-        enabled: true,
-      });
+      if (isEdit && params.id) {
+        alarmStore.updateAlarm(params.id, {
+          hour: hour24,
+          minute: minuteIdx,
+          label: label.trim() || 'Alarm',
+          days,
+          challenge: mappedChallenge,
+          difficulty,
+          enabled: true,
+        });
+      } else {
+        alarmStore.addAlarm({
+          hour: hour24,
+          minute: minuteIdx,
+          label: label.trim() || 'Alarm',
+          days,
+          challenge: mappedChallenge,
+          difficulty,
+          enabled: true,
+        });
+      }
       
       if (onClose) {
         onClose();
@@ -371,7 +413,7 @@ export default function CreateAlarmScreen({
               style={styles.saveBtn}
             >
               <Text style={[styles.saveText, { color: theme.fabText }]}>
-                Set alarm
+                {isEdit ? 'Save alarm' : 'Set alarm'}
               </Text>
             </LinearGradient>
           </Animated.View>

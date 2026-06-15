@@ -16,7 +16,7 @@ import {
 import { countdownLabel, format12h, nextAlarm } from '@/utils/time';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Link, useNavigation } from 'expo-router';
+import { Link, router, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
@@ -71,7 +71,7 @@ export default function HomeScreen() {
     return unsubscribe;
   }, [navigation, refreshAlarms]);
 
-  // Handle launch payload from alarm dismiss/snooze
+  // Handle launch payload from alarm snooze (dismiss is now handled by root layout overlay)
   const handleLaunchPayload = useCallback((payload: any) => {
     if (!payload) return;
 
@@ -86,10 +86,9 @@ export default function HomeScreen() {
           title: payload.title || 'Alarm',
         });
       }
-    } else if (payload.payload === 'dismiss') {
-      // End snooze countdown activity on alarm dismissal
-      safeSnoozeActivity.endAll();
     }
+    // NOTE: 'dismiss' payloads are handled by the root layout's ActiveAlarmOverlay.
+    // Do NOT navigate to /ringing — that would create an escape path.
 
     // Refresh alarm list from native state after any interaction
     refreshAlarms();
@@ -101,16 +100,19 @@ export default function HomeScreen() {
     safeAlarmKit.requestAuthorization().then(() => {
       refreshAlarms();
 
-      // Read cold-launch payload (user tapped dismiss/snooze while app was closed)
+      // Read cold-launch payload — only handle snooze here
       const coldPayload = safeAlarmKit.getLaunchPayload();
-      if (coldPayload) {
+      if (coldPayload && coldPayload.payload === 'snooze') {
         handleLaunchPayload(coldPayload);
       }
     });
 
     // Subscribe to events received while app is already running in foreground
     const subscription = safeAlarmKit.addLaunchPayloadListener((payload: any) => {
-      handleLaunchPayload(payload);
+      if (payload?.payload === 'snooze') {
+        handleLaunchPayload(payload);
+      }
+      // dismiss payloads are handled by root layout
     });
 
     return () => {
@@ -248,6 +250,13 @@ export default function HomeScreen() {
               index={i}
               onToggle={() => toggleAlarm(alarm.id)}
               onDelete={() => alarmStore.deleteAlarm(alarm.id)}
+              onLongPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push({
+                  pathname: '/home/new-alarm',
+                  params: { id: alarm.id },
+                });
+              }}
             />
           ))}
 

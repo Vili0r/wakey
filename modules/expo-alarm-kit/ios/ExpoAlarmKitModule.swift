@@ -254,6 +254,7 @@ public struct AlarmStopBackgroundIntent: LiveActivityIntent {
 @available(iOS 26.0, *)
 public struct AlarmStopOpenAppIntent: LiveActivityIntent {
   public static var title: LocalizedStringResource = "Dismiss Alarm and Open App"
+  public static var openAppWhenRun: Bool = true
   public static var supportedModes: IntentModes = [.foreground(.immediate)]
 
   @Parameter(title: "Alarm ID")
@@ -654,6 +655,19 @@ public class ExpoAlarmKitModule: Module {
         var alarms = self.getPersistedAlarms()
         alarms.removeAll { ($0["id"] as? String) == id }
         self.savePersistedAlarms(alarms)
+        promise.resolve(true)
+      }
+    }
+
+    AsyncFunction("stopAlarm") { (id: String, promise: Promise) in
+      if #available(iOS 26.0, *) {
+        do {
+          try await AlarmStopHelper.performStop(alarmId: id, payload: "dismiss")
+          promise.resolve(true)
+        } catch {
+          promise.reject("ERR_STOP_FAILED", error.localizedDescription)
+        }
+      } else {
         promise.resolve(true)
       }
     }

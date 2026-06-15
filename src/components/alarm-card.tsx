@@ -30,6 +30,7 @@ interface AlarmCardProps {
   index: number;
   onToggle: () => void;
   onDelete: () => void;
+  onLongPress?: () => void;
 }
 
 export default function AlarmCard({
@@ -38,6 +39,7 @@ export default function AlarmCard({
   index,
   onToggle,
   onDelete,
+  onLongPress,
 }: AlarmCardProps) {
   const { time, period } = format12h(alarm.hour, alarm.minute);
   const dim = !alarm.enabled;
@@ -118,6 +120,7 @@ export default function AlarmCard({
       <GestureDetector gesture={pan}>
         <Animated.View style={slideStyle}>
           <PressScale
+            onLongPress={onLongPress}
             style={[
               styles.card,
               { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },

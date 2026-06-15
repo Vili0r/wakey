@@ -22,13 +22,14 @@ const updatedAt = integer('updated_at', { mode: 'timestamp_ms' })
   .default(sql`(unixepoch() * 1000)`);
 
 /* Enumerated value sets — kept here so the UI can import them too. */
-export const CHALLENGE_TYPES = ['math', 'shake', 'pattern', 'steps'] as const;
+export const CHALLENGE_TYPES = ['math', 'shake', 'pattern', 'steps', 'pushups', 'squats', 'photo', 'scan', 'find-item', 'bed', 'meds'] as const;
 export const DIFFICULTIES = ['gentle', 'standard', 'brutal'] as const;
 export const EVENT_OUTCOMES = [
   'dismissed', //  challenge beaten → counts toward streak
   'snoozed', //    bought more time
   'auto_silenced', // gave up after the timeout window
   'missed', //     never acknowledged
+  'dismissed_assisted', // bypass via accessibility escape
 ] as const;
 
 export type ChallengeType = (typeof CHALLENGE_TYPES)[number];
