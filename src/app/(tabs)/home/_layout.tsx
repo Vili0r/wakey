@@ -1,7 +1,9 @@
 import { useTheme } from '@/hooks/use-theme';
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
+import { Button } from 'react-native';
 
 export default function Layout() {
+    const router = useRouter();
     const theme = useTheme();
 
     return (
@@ -12,17 +14,32 @@ export default function Layout() {
                     headerShown: false,
                 }}
             />
-            <Stack.Screen 
-                name="new-alarm" 
-                options={{ 
+            <Stack.Screen
+                name="new-alarm"
+                options={{
+                    contentStyle: { backgroundColor: theme.background },
+                    headerShown: true,
+                    presentation: 'modal',
+                    headerTransparent: true,
+                    headerTitle: "New Alarm",
+                    headerRight: () => (
+                        <Button title="Done" onPress={() => router.dismiss()} color={theme.text} />
+                    ),
+                }}
+            />
+            <Stack.Screen
+                name="challenge"
+                options={{
                     contentStyle: { backgroundColor: theme.background },
                     headerShown: true,
                     presentation: 'formSheet',
-                    sheetAllowedDetents: [0.75],
+                    sheetAllowedDetents: [0.85],
                     sheetGrabberVisible: true,
-                    headerTransparent: true,
-                    headerTitle: "New Alarm",
-                }} 
+                    title: '',
+                    headerRight: () => (
+                        <Button title="Done" onPress={() => router.dismiss()} color={theme.text} />
+                    ),
+                }}
             />
         </Stack>
     );

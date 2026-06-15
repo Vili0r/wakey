@@ -182,7 +182,7 @@ export default function HomeScreen() {
           </View>
           {/* Hero — next alarm */}
           <Animated.View
-            entering={FadeInDown.delay(60).springify().damping(18)}
+            entering={FadeInDown.delay(60).springify().damping(26)}
             style={styles.hero}
           >
             {next && heroTime ? (

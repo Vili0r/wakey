@@ -464,7 +464,7 @@ export default function SettingsScreen({
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
 
       <Animated.ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 46 }]}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 46, paddingBottom: insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Profile card */}

@@ -7,7 +7,7 @@ import Animated, {
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 interface ChallengeCardProps {
@@ -30,24 +30,34 @@ export default function ChallengeCard({
   const p = useSharedValue(selected ? 1 : 0);
   const pressed = useSharedValue(0);
   useEffect(() => {
-    p.value = withSpring(selected ? 1 : 0, { damping: 16, stiffness: 200 });
+    p.value = withTiming(selected ? 1 : 0, { duration: 150 });
   }, [selected, p]);
+
+  // Use solid colors to avoid alpha interpolation rendering glitches in React Native
+  const unselectedBg = theme.surface;
+  const selectedBg = theme.name === 'dark' ? '#352E34' : '#FEF0ED';
+  const unselectedBorder = theme.name === 'dark' ? '#26293D' : '#F1F1F2';
+  const selectedBorder = theme.accent;
 
   const aStyle = useAnimatedStyle(() => ({
     borderColor: interpolateColor(
       p.value,
       [0, 1],
-      [theme.surfaceBorder, theme.accent],
+      [unselectedBorder, selectedBorder],
     ),
-    backgroundColor: interpolateColor(p.value, [0, 1], [theme.surface, theme.chipBg]),
+    backgroundColor: interpolateColor(
+      p.value,
+      [0, 1],
+      [unselectedBg, selectedBg],
+    ),
     transform: [{ scale: interpolate(pressed.value, [0, 1], [1, 0.97]) }],
   }));
 
   return (
     <Pressable
       onPress={onPress}
-      onPressIn={() => (pressed.value = withSpring(1, { damping: 20, stiffness: 300 }))}
-      onPressOut={() => (pressed.value = withSpring(0, { damping: 20, stiffness: 300 }))}
+      onPressIn={() => (pressed.value = withTiming(1, { duration: 100 }))}
+      onPressOut={() => (pressed.value = withTiming(0, { duration: 100 }))}
       style={{ flex: 1 }}
     >
       <Animated.View style={[styles.challengeCard, aStyle]}>

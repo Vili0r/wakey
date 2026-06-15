@@ -1,40 +1,32 @@
+import DayPill from '@/components/day-pill';
+import Segmented from '@/components/segmented';
+import SFIcon from '@/components/SF-icon';
+import Wheel, { ITEM_H, WHEEL_PAD } from '@/components/wheel';
 import { THEMES } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { alarmStore, Haptics } from '@/utils/alarm-store';
-import Wheel, { WHEEL_PAD, ITEM_H } from '@/components/wheel';
-import Segmented from '@/components/segmented';
-import DayPill from '@/components/day-pill';
-import ChallengeCard from '@/components/challenge-card';
 import { ringsIn } from '@/utils/time';
-import {
-    InstrumentSerif_400Regular_Italic,
-    useFonts,
-} from '@expo-google-fonts/instrument-serif';
-import {
-    Sora_400Regular,
-    Sora_500Medium,
-    Sora_600SemiBold,
-} from '@expo-google-fonts/sora';
-import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    useWindowDimensions,
-    View,
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
 } from 'react-native';
 import Animated, {
-    FadeInDown,
-    interpolate,
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring
+  FadeInDown,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
+import { CHALLENGE_ICONS, CHALLENGES } from './challenge';
 
 
 /* ------------------------------------------------------------------ */
@@ -58,33 +50,6 @@ const CHALLENGE_MAPPING: Record<string, { glyph: string; label: string }> = {
   pattern: { glyph: '◫', label: 'PATTERN RECALL' },
   steps: { glyph: '∴', label: 'STEPS × 15' },
 };
-
-const CHALLENGES = [
-  {
-    id: 'math',
-    glyph: '÷',
-    name: 'Equations',
-    desc: 'Solve to silence',
-  },
-  {
-    id: 'shake',
-    glyph: '≈',
-    name: 'Shake',
-    desc: 'Wake your arms first',
-  },
-  {
-    id: 'pattern',
-    glyph: '◫',
-    name: 'Pattern recall',
-    desc: 'Memory before mercy',
-  },
-  {
-    id: 'steps',
-    glyph: '∴',
-    name: 'Steps',
-    desc: 'Out of bed, no debate',
-  },
-] as const;
 
 const DIFFICULTIES = ['gentle', 'standard', 'brutal'] as const;
 const DIFFICULTY_LABELS: Record<(typeof DIFFICULTIES)[number], string> = {
@@ -114,13 +79,7 @@ export default function CreateAlarmScreen({
   const isDark = propIsDark ?? (systemScheme !== 'light');
   const theme = isDark ? THEMES.dark : THEMES.light;
 
-  const [fontsLoaded] = useFonts({
-    InstrumentSerif_400Regular_Italic,
-    Sora_400Regular,
-    Sora_500Medium,
-    Sora_600SemiBold,
-    SpaceMono_400Regular,
-  });
+  const params = useLocalSearchParams<{ challengeId?: string }>();
 
   const [hourIdx, setHourIdx] = useState(() => {
     const h24 = new Date().getHours();
@@ -131,7 +90,14 @@ export default function CreateAlarmScreen({
   const [isPM, setIsPM] = useState(() => new Date().getHours() >= 12);
   const [label, setLabel] = useState('');
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
-  const [challengeId, setChallengeId] = useState<string>('math');
+  const [challengeId, setChallengeId] = useState<string>('');
+
+  useEffect(() => {
+    if (params.challengeId) {
+      setChallengeId(params.challengeId);
+    }
+  }, [params.challengeId]);
+
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>('standard');
   const [now, setNow] = useState(() => new Date());
 
@@ -151,6 +117,10 @@ export default function CreateAlarmScreen({
     [hour24, minuteIdx, days, now],
   );
 
+  const selectedChallenge = useMemo(() => {
+    return CHALLENGES.find((c) => c.id === challengeId);
+  }, [challengeId]);
+
   // Save button warms up when the alarm is "real" (always valid here,
   // but the entrance pulse sells the commitment)
   const savePressed = useSharedValue(0);
@@ -158,7 +128,7 @@ export default function CreateAlarmScreen({
     transform: [{ scale: interpolate(savePressed.value, [0, 1], [1, 0.97]) }],
   }));
 
-  if (!fontsLoaded) return null;
+
 
   const toggleDay = (i: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -170,6 +140,11 @@ export default function CreateAlarmScreen({
   const wheelW = Math.min((width - 40) * 0.26, 96);
 
   const handleSave = () => {
+    if (!challengeId) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert('Selection Required', 'Please select a challenge to wake up.');
+      return;
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const mappedChallenge = CHALLENGE_MAPPING[challengeId] || CHALLENGE_MAPPING.math;
 
@@ -214,7 +189,7 @@ export default function CreateAlarmScreen({
 
         {/* Time wheels */}
         <Animated.View
-          entering={FadeInDown.delay(90).springify().damping(18)}
+          entering={FadeInDown.delay(90).springify().damping(26)}
           style={styles.wheelsWrap}
         >
           {/* Centerline band */}
@@ -250,7 +225,7 @@ export default function CreateAlarmScreen({
 
         {/* AM / PM */}
         <Animated.View
-          entering={FadeInDown.delay(130).springify().damping(18)}
+          entering={FadeInDown.delay(130).springify().damping(26)}
           style={{ alignItems: 'center', marginTop: 14 }}
         >
           <Segmented
@@ -263,7 +238,7 @@ export default function CreateAlarmScreen({
         </Animated.View>
 
         {/* Repeat days */}
-        <Animated.View entering={FadeInDown.delay(180).springify().damping(18)}>
+        <Animated.View entering={FadeInDown.delay(180).springify().damping(126)}>
           <Text style={[styles.sectionLabel, { color: theme.textFaint }]}>
             REPEAT
           </Text>
@@ -288,7 +263,7 @@ export default function CreateAlarmScreen({
         </Animated.View>
 
         {/* Label */}
-        <Animated.View entering={FadeInDown.delay(220).springify().damping(18)}>
+        <Animated.View entering={FadeInDown.delay(220).springify().damping(126)}>
           <Text style={[styles.sectionLabel, { color: theme.textFaint }]}>
             LABEL
           </Text>
@@ -311,55 +286,47 @@ export default function CreateAlarmScreen({
         </Animated.View>
 
         {/* Challenge */}
-        <Animated.View entering={FadeInDown.delay(260).springify().damping(18)}>
+        <Animated.View entering={FadeInDown.delay(260).springify().damping(126)}>
           <Text style={[styles.sectionLabel, { color: theme.textFaint }]}>
             TO SILENCE IT, YOU MUST
           </Text>
-          <View style={styles.challengeRow}>
-            <ChallengeCard
-              {...CHALLENGES[0]}
-              selected={challengeId === CHALLENGES[0].id}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setChallengeId(CHALLENGES[0].id);
-              }}
-              theme={theme}
-            />
-            <ChallengeCard
-              {...CHALLENGES[1]}
-              selected={challengeId === CHALLENGES[1].id}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setChallengeId(CHALLENGES[1].id);
-              }}
-              theme={theme}
-            />
-          </View>
-          <View style={styles.challengeRow}>
-            <ChallengeCard
-              {...CHALLENGES[2]}
-              selected={challengeId === CHALLENGES[2].id}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setChallengeId(CHALLENGES[2].id);
-              }}
-              theme={theme}
-            />
-            <ChallengeCard
-              {...CHALLENGES[3]}
-              selected={challengeId === CHALLENGES[3].id}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setChallengeId(CHALLENGES[3].id);
-              }}
-              theme={theme}
-            />
-          </View>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push({
+                pathname: '/home/challenge',
+                params: { selectedId: challengeId },
+              });
+            }}
+            style={({ pressed }) => [
+              styles.challengeSelector,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.surfaceBorder,
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <View style={styles.challengeSelectorLeft}>
+              <SFIcon
+                name={(challengeId && CHALLENGE_ICONS[challengeId] as any) || 'clock.badge.xmark'}
+                size={20}
+                color={theme.accent}
+              />
+              <Text style={[
+                styles.challengeSelectorName,
+                { color: challengeId ? theme.text : theme.textFaint }
+              ]}>
+                {challengeId ? selectedChallenge?.name : 'Select a challenge to wake up'}
+              </Text>
+            </View>
+            <Text style={[styles.chevron, { color: theme.textFaint }]}>→</Text>
+          </Pressable>
         </Animated.View>
 
         {/* Difficulty */}
         <Animated.View
-          entering={FadeInDown.delay(300).springify().damping(18)}
+          entering={FadeInDown.delay(300).springify().damping(126)}
           style={{ marginTop: 6 }}
         >
           <Text style={[styles.sectionLabel, { color: theme.textFaint }]}>
@@ -384,9 +351,9 @@ export default function CreateAlarmScreen({
 
       {/* Save */}
       <Animated.View
-        entering={FadeInDown.delay(380).springify().damping(16)}
-        style={styles.saveWrap}
-      >
+          entering={FadeInDown.delay(380).springify().damping(122)}
+          style={styles.saveWrap}
+        >
         <Pressable
           onPress={handleSave}
           onPressIn={() =>
@@ -513,6 +480,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginBottom: 10,
+  },
+  challengeSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  challengeSelectorLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  challengeSelectorName: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 15,
+  },
+  chevron: {
+    fontFamily: 'SpaceMono_400Regular',
+    fontSize: 16,
   },
 
   /* Save */

@@ -92,11 +92,11 @@ export default function AlarmCard({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(120 + index * 90)
+      entering={FadeInDown.delay(100 + index * 90)
         .springify()
-        .damping(18)}
+        .damping(120)}
       exiting={FadeOut.duration(180)}
-      layout={LinearTransition.springify().damping(18)}
+      layout={LinearTransition.springify().damping(26)}
       style={styles.cardContainer}
     >
       {/* Delete action — sits underneath the card, revealed by swiping left */}

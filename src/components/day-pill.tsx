@@ -6,7 +6,7 @@ import Animated, {
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 interface DayPillProps {
@@ -24,7 +24,7 @@ export default function DayPill({
 }: DayPillProps) {
   const p = useSharedValue(active ? 1 : 0);
   useEffect(() => {
-    p.value = withSpring(active ? 1 : 0, { damping: 14, stiffness: 260 });
+    p.value = withTiming(active ? 1 : 0, { duration: 150 });
   }, [active, p]);
 
   const aStyle = useAnimatedStyle(() => ({
