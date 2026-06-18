@@ -100,14 +100,17 @@ export default function HomeScreen() {
     safeAlarmKit.requestAuthorization().then(() => {
       refreshAlarms();
 
-      // Read cold-launch payload — only handle snooze here
-      const coldPayload = safeAlarmKit.getLaunchPayload();
-      if (coldPayload && coldPayload.payload === 'snooze') {
-        handleLaunchPayload(coldPayload);
-      }
+      // IMPORTANT: do NOT call getLaunchPayload() here. That read is destructive
+      // (the native module clears the payload on read), so reading it here would
+      // race the root layout and could consume a 'dismiss' payload before the
+      // ActiveAlarmOverlay sees it — leaving the challenge screen unshown. The
+      // root layout is the single owner of the destructive cold-launch read and
+      // handles both 'dismiss' and 'snooze'.
     });
 
-    // Subscribe to events received while app is already running in foreground
+    // Subscribe to events received while app is already running in foreground.
+    // This is a non-destructive broadcast (not the UserDefaults queue), so it
+    // does not conflict with the root layout's reads. We only act on snooze.
     const subscription = safeAlarmKit.addLaunchPayloadListener((payload: any) => {
       if (payload?.payload === 'snooze') {
         handleLaunchPayload(payload);

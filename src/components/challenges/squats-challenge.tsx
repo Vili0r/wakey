@@ -13,15 +13,16 @@
  */
 
 import { useRepCounter } from '@/hooks/use-rep-counter';
-import { kneeAngle, type PersonKeypoints } from '@/utils/pose-math';
+import { targetFor, type ChallengeProps } from '@/types/challenge';
 import { Haptics } from '@/utils/alarm-store';
-import { type ChallengeProps, targetFor } from '@/types/challenge';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useFrameOutput, type Frame } from 'react-native-vision-camera';
-import { scheduleOnRN } from 'react-native-worklets';
+import { kneeAngle, type PersonKeypoints } from '@/utils/pose-math';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { models, usePoseEstimation } from 'react-native-executorch';
 import { useSharedValue } from 'react-native-reanimated';
+import { useFrameOutput, type Frame } from 'react-native-vision-camera';
+import { scheduleOnRN } from 'react-native-worklets';
 import CameraChallenge from './camera-challenge';
+import ChallengeIntro from './challenge-intro';
 import RepOverlay from './rep-overlay';
 
 export default function SquatsChallenge({
@@ -37,6 +38,10 @@ export default function SquatsChallenge({
   const [count, setCount] = useState(0);
   const [hint, setHint] = useState<string | null>('Step into frame');
   const [isActive, setIsActive] = useState(true);
+  const [started, setStarted] = useState(false);
+  // Mirror `started` into a ref so the pose callback (a stable useCallback) can
+  // read it without being re-created on every start toggle.
+  const startedRef = useRef(false);
   const startedAt = useRef(Date.now());
   const done = useRef(false);
   const noPersonFrames = useRef(0);
@@ -68,10 +73,16 @@ export default function SquatsChallenge({
     },
   });
 
+  const handleStart = useCallback(() => {
+    startedRef.current = true;
+    startedAt.current = Date.now();
+    setStarted(true);
+  }, []);
+
   // Runs on the JS thread with raw keypoints from the worklet.
   const onPose = useCallback(
     (persons: PersonKeypoints[]) => {
-      if (done.current) return;
+      if (done.current || !startedRef.current) return;
       const person = persons?.[0];
       if (!person) {
         noPersonFrames.current += 1;
@@ -106,16 +117,13 @@ export default function SquatsChallenge({
     onFrame: useCallback(
       (frame: Frame) => {
         'worklet';
+        // The `finally` block disposes the frame on every path, so branches
+        // here must NOT call frame.dispose() themselves — doing so double-frees
+        // the native frame ("NativeState is null").
         try {
-          if (!isActive) {
-            frame.dispose();
-            return;
-          }
+          if (!isActive) return;
           frameCount.value = (frameCount.value + 1) % 3;
-          if (frameCount.value !== 0) {
-            frame.dispose();
-            return;
-          }
+          if (frameCount.value !== 0) return;
 
           if (!rof) return;
           const result = rof(frame, isFront);
@@ -147,7 +155,20 @@ export default function SquatsChallenge({
       onAbort={onAbort}
       isActive={isActive}
     >
-      <RepOverlay count={count} target={target} hint={hint} />
+      {started ? (
+        <RepOverlay count={count} target={target} hint={hint} />
+      ) : (
+        <ChallengeIntro
+          title="Squats"
+          steps={[
+            'Prop your phone upright so your whole body is in view.',
+            'Step back until your head and feet both fit on screen.',
+            'Squat down until your knees bend, then stand tall.',
+          ]}
+          goal={`Complete ${target} squats to turn off the alarm.`}
+          onStart={handleStart}
+        />
+      )}
     </CameraChallenge>
   );
 }

@@ -14,6 +14,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useColorScheme,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -496,7 +497,7 @@ function PeriodSegment({
 /* ------------------------------------------------------------------ */
 
 export default function InsightsScreen({
-  isDark = true,
+  isDark: propIsDark,
   data = DEFAULT_DATA,
   onClose,
 }: {
@@ -506,6 +507,8 @@ export default function InsightsScreen({
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const systemScheme = useColorScheme();
+  const isDark = propIsDark ?? (systemScheme !== 'light');
   const theme = isDark ? THEMES.dark : THEMES.light;
 
   const [fontsLoaded] = useFonts({

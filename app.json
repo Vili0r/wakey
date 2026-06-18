@@ -8,7 +8,6 @@
     "scheme": "wakey",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "newArchEnabled": true,
       "deploymentTarget": "17.0",
       "icon": "./assets/expo.icon",
       "infoPlist": {
@@ -26,7 +25,6 @@
       }
     },
     "android": {
-      "newArchEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -42,7 +40,6 @@
     },
     "plugins": [
       "expo-router",
-      "./src/plugins/withAlarmKit.js",
       [
         "expo-splash-screen",
         {
@@ -53,6 +50,7 @@
           }
         }
       ],
+      "./src/plugins/withAlarmKit.js",
       [
         "expo-widgets",
         {

@@ -1,15 +1,19 @@
 import DayPill from '@/components/day-pill';
 import Segmented from '@/components/segmented';
 import SFIcon from '@/components/SF-icon';
+import SoundPicker from '@/components/sound-picker';
+import { DEFAULT_SOUND_ID, getAlarmSound } from '@/utils/alarm-sounds';
+import { getDefaultSoundId } from '@/utils/settings-store';
 import Wheel, { ITEM_H, WHEEL_PAD } from '@/components/wheel';
 import { THEMES } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { alarmStore, Haptics, CHALLENGE_MAPPING, getChallengeId } from '@/utils/alarm-store';
+import { alarmStore, Haptics, CHALLENGE_MAPPING, getChallengeId, mapDbToUiAlarm, type Alarm } from '@/utils/alarm-store';
 import { ringsIn } from '@/utils/time';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
@@ -27,6 +31,9 @@ import Animated, {
   withSpring
 } from 'react-native-reanimated';
 import { CHALLENGE_ICONS, CHALLENGES } from './challenge';
+import { db } from '@/db/db';
+import { alarms as alarmsTable } from '@/db/schema';
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 
 /* ------------------------------------------------------------------ */
@@ -40,6 +47,7 @@ export type NewAlarm = {
   days: number[]; // 0 = Sun; empty = rings once
   challengeId: string;
   difficulty: 'gentle' | 'standard' | 'brutal';
+  soundId: string;
 };
 
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -78,10 +86,17 @@ export default function CreateAlarmScreen({
   const isEdit = !!params.id;
   const navigation = useNavigation();
 
+  // Load alarms reactively using useLiveQuery
+  const { data: dbAlarms = [] } = useLiveQuery(db.select().from(alarmsTable));
+
+  const alarms = useMemo(() => {
+    return dbAlarms.map(mapDbToUiAlarm);
+  }, [dbAlarms]);
+
   const editAlarm = useMemo(() => {
     if (!params.id) return null;
-    return alarmStore.getAlarms().find((a) => a.id === params.id);
-  }, [params.id]);
+    return alarms.find((a) => a.id === params.id) || null;
+  }, [params.id, alarms]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -89,6 +104,48 @@ export default function CreateAlarmScreen({
     });
   }, [isEdit, navigation]);
 
+  if (isEdit && !editAlarm) {
+    return (
+      <View style={[styles.root, { backgroundColor: theme.bg, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={theme.accent} />
+      </View>
+    );
+  }
+
+  return (
+    <AlarmForm
+      key={editAlarm ? editAlarm.id : 'new'}
+      editAlarm={editAlarm}
+      isEdit={isEdit}
+      theme={theme}
+      isDark={isDark}
+      width={width}
+      params={params}
+      onClose={onClose}
+      onSave={onSave}
+    />
+  );
+}
+
+function AlarmForm({
+  editAlarm,
+  isEdit,
+  theme,
+  isDark,
+  width,
+  params,
+  onClose,
+  onSave,
+}: {
+  editAlarm: Alarm | null;
+  isEdit: boolean;
+  theme: any;
+  isDark: boolean;
+  width: number;
+  params: { id?: string; challengeId?: string };
+  onClose?: () => void;
+  onSave?: (alarm: NewAlarm) => void;
+}) {
   const [hourIdx, setHourIdx] = useState(() => {
     if (editAlarm) {
       const h12 = editAlarm.hour % 12 === 0 ? 12 : editAlarm.hour % 12;
@@ -129,7 +186,31 @@ export default function CreateAlarmScreen({
     if (editAlarm) return editAlarm.difficulty || 'standard';
     return 'standard';
   });
+  const [soundId, setSoundId] = useState<string>(() => {
+    if (editAlarm) return editAlarm.soundId ?? DEFAULT_SOUND_ID;
+    return DEFAULT_SOUND_ID;
+  });
+  const [soundPickerOpen, setSoundPickerOpen] = useState(false);
+  const soundTouched = useRef(false);
   const [now, setNow] = useState(() => new Date());
+
+  // New alarms inherit the user's default sound from settings — but don't clobber
+  // a pick the user already made before this async load resolved.
+  useEffect(() => {
+    if (editAlarm) return;
+    let cancelled = false;
+    getDefaultSoundId().then((id) => {
+      if (!cancelled && !soundTouched.current) setSoundId(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editAlarm]);
+
+  const pickSound = (id: string) => {
+    soundTouched.current = true;
+    setSoundId(id);
+  };
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30_000);
@@ -158,8 +239,6 @@ export default function CreateAlarmScreen({
     transform: [{ scale: interpolate(savePressed.value, [0, 1], [1, 0.97]) }],
   }));
 
-
-
   const toggleDay = (i: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setDays((prev) =>
@@ -186,6 +265,7 @@ export default function CreateAlarmScreen({
         days,
         challengeId,
         difficulty,
+        soundId,
       });
     } else {
       if (isEdit && params.id) {
@@ -196,6 +276,7 @@ export default function CreateAlarmScreen({
           days,
           challenge: mappedChallenge,
           difficulty,
+          soundId,
           enabled: true,
         });
       } else {
@@ -206,6 +287,7 @@ export default function CreateAlarmScreen({
           days,
           challenge: mappedChallenge,
           difficulty,
+          soundId,
           enabled: true,
         });
       }
@@ -337,7 +419,7 @@ export default function CreateAlarmScreen({
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               router.push({
                 pathname: '/home/challenge',
-                params: { selectedId: challengeId },
+                params: { selectedId: challengeId, alarmId: params.id },
               });
             }}
             style={({ pressed }) => [
@@ -388,6 +470,35 @@ export default function CreateAlarmScreen({
           </Text>
         </Animated.View>
 
+        {/* Sound */}
+        <Animated.View entering={FadeInDown.delay(340).springify().damping(126)}>
+          <Text style={[styles.sectionLabel, { color: theme.textFaint }]}>
+            SOUND
+          </Text>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setSoundPickerOpen(true);
+            }}
+            style={({ pressed }) => [
+              styles.challengeSelector,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.surfaceBorder,
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <View style={styles.challengeSelectorLeft}>
+              <SFIcon name="speaker.wave.2.fill" size={20} color={theme.accent} />
+              <Text style={[styles.challengeSelectorName, { color: theme.text }]}>
+                {getAlarmSound(soundId).name}
+              </Text>
+            </View>
+            <Text style={[styles.chevron, { color: theme.textFaint }]}>→</Text>
+          </Pressable>
+        </Animated.View>
+
         <View style={{ height: 130 }} />
       </Animated.ScrollView>
 
@@ -419,6 +530,14 @@ export default function CreateAlarmScreen({
           </Animated.View>
         </Pressable>
       </Animated.View>
+
+      <SoundPicker
+        visible={soundPickerOpen}
+        selectedId={soundId}
+        onSelect={pickSound}
+        onClose={() => setSoundPickerOpen(false)}
+        theme={theme}
+      />
     </View>
   );
 }

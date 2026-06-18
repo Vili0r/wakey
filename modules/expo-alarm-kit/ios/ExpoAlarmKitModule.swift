@@ -72,7 +72,12 @@ struct AlarmStopHelper {
     }
 
     // Stop the alarm using AlarmKit manager
-    try AlarmManager.shared.stop(id: uuid)
+    do {
+      try AlarmManager.shared.stop(id: uuid)
+    } catch {
+      NSLog("[ExpoAlarmKit] Notice: AlarmManager.shared.stop threw an error: %@", error.localizedDescription)
+      // We continue executing because we must save the payload even if stopping fails (e.g. if the system already stopped it)
+    }
 
     // Remove from local persisted cache
     if let defaults = UserDefaults(suiteName: appGroupId) {

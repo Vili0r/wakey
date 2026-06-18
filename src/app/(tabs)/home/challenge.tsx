@@ -103,14 +103,14 @@ export default function ChallengeSelectScreen() {
   const isDark = systemScheme !== 'light';
   const theme = isDark ? THEMES.dark : THEMES.light;
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ selectedId?: string }>();
+  const params = useLocalSearchParams<{ selectedId?: string; alarmId?: string }>();
   const activeId = params.selectedId || 'math';
 
   const selectChallenge = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.dismissTo({
       pathname: '/home/new-alarm',
-      params: { challengeId: id },
+      params: { challengeId: id, id: params.alarmId },
     });
   };
 

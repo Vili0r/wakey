@@ -18,6 +18,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { models, usePoseEstimation } from 'react-native-executorch';
 import { useSharedValue } from 'react-native-reanimated';
 import CameraChallenge from './camera-challenge';
+import ChallengeIntro from './challenge-intro';
 import RepOverlay from './rep-overlay';
 
 export default function PushupsChallenge({
@@ -33,6 +34,10 @@ export default function PushupsChallenge({
   const [count, setCount] = useState(0);
   const [hint, setHint] = useState<string | null>('Get into position');
   const [isActive, setIsActive] = useState(true);
+  const [started, setStarted] = useState(false);
+  // Mirror `started` into a ref so the pose callback (a stable useCallback) can
+  // read it without being re-created on every start toggle.
+  const startedRef = useRef(false);
   const startedAt = useRef(Date.now());
   const done = useRef(false);
   const noPersonFrames = useRef(0);
@@ -66,9 +71,15 @@ export default function PushupsChallenge({
     },
   });
 
+  const handleStart = useCallback(() => {
+    startedRef.current = true;
+    startedAt.current = Date.now();
+    setStarted(true);
+  }, []);
+
   const onPose = useCallback(
     (persons: PersonKeypoints[]) => {
-      if (done.current) return;
+      if (done.current || !startedRef.current) return;
       const person = persons?.[0];
       if (!person) {
         noPersonFrames.current += 1;
@@ -121,16 +132,13 @@ export default function PushupsChallenge({
     onFrame: useCallback(
       (frame: Frame) => {
         'worklet';
+        // The `finally` block disposes the frame on every path, so branches
+        // here must NOT call frame.dispose() themselves — doing so double-frees
+        // the native frame ("NativeState is null").
         try {
-          if (!isActive) {
-            frame.dispose();
-            return;
-          }
+          if (!isActive) return;
           frameCount.value = (frameCount.value + 1) % 3;
-          if (frameCount.value !== 0) {
-            frame.dispose();
-            return;
-          }
+          if (frameCount.value !== 0) return;
 
           if (!rof) return;
           const result = rof(frame, isFront);
@@ -161,7 +169,20 @@ export default function PushupsChallenge({
       onAbort={onAbort}
       isActive={isActive}
     >
-      <RepOverlay count={count} target={target} hint={hint} />
+      {started ? (
+        <RepOverlay count={count} target={target} hint={hint} />
+      ) : (
+        <ChallengeIntro
+          title="Push-ups"
+          steps={[
+            'Prop your phone to the side so it can see your upper body.',
+            'Get into a push-up position facing the camera.',
+            'Lower your chest, then push back up.',
+          ]}
+          goal={`Complete ${target} push-ups to turn off the alarm.`}
+          onStart={handleStart}
+        />
+      )}
     </CameraChallenge>
   );
 }

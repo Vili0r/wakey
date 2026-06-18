@@ -1,17 +1,17 @@
 import { db } from '@/db/db';
 import {
-  alarms as alarmsTable,
   alarmEvents,
-  streakDays,
-  streakState,
+  alarms as alarmsTable,
   ChallengeType,
   Difficulty,
-  EventOutcome
+  EventOutcome,
+  streakDays,
+  streakState
 } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-import * as ExpoHaptics from 'expo-haptics';
-import { File, Paths } from 'expo-file-system';
 import { stopAlarmSound } from '@/utils/alarm-sound';
+import { eq } from 'drizzle-orm';
+import { File, Paths } from 'expo-file-system';
+import * as ExpoHaptics from 'expo-haptics';
 
 // ── Pending-alarm persistence (survives force-quit) ──────────────────
 // Uses a small JSON file rather than a DB row so it can be read
@@ -21,6 +21,7 @@ type PendingAlarmData = {
   alarmId: string;
   challenge: string;
   difficulty: 'gentle' | 'standard' | 'brutal';
+  soundId?: string | null;
 };
 
 const pendingFile = new File(Paths.document, 'pending_alarm.json');
@@ -110,6 +111,13 @@ try {
 
 const APP_GROUP_ID = 'group.com.tsouvili.wakey';
 
+// A fixed UUID reserved for the native "nag" re-fires (see alarm-nag.ts). It is
+// deliberately OUTSIDE the dbIdToUUID scheme so uuidToDbId() returns null for
+// it, and it must never be treated as a real user alarm. Defined here (rather
+// than in alarm-nag.ts) so this module can filter it out without a circular
+// import — alarm-nag depends on alarm-store, not the other way around.
+export const NAG_ALARM_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+
 export type Challenge = { glyph: string; label: string };
 
 export type Alarm = {
@@ -122,6 +130,7 @@ export type Alarm = {
   enabled: boolean;
   isOneTime?: boolean; // true for one-time alarms (no repeat days)
   difficulty: Difficulty;
+  soundId?: string | null; // null → fall back to the default tone
 };
 
 export const INITIAL_ALARMS: Alarm[] = [
@@ -195,7 +204,6 @@ export const safeAlarmKit = {
     return Promise.resolve('denied');
   },
   scheduleAlarm: (options: any) => {
-    console.log("[Test] safeAlarmKit.scheduleAlarm called. NativeAlarmKit:", NativeAlarmKit);
     try {
       if (NativeAlarmKit?.scheduleAlarm) {
         return NativeAlarmKit.scheduleAlarm(options).catch((err: any) => {
@@ -237,7 +245,9 @@ export const safeAlarmKit = {
   getAllAlarms: (): Alarm[] => {
     try {
       if (NativeAlarmKit?.getAllAlarms) {
-        const native = NativeAlarmKit.getAllAlarms();
+        const native = (NativeAlarmKit.getAllAlarms() as any[] | undefined)?.filter(
+          (a: any) => a?.id !== NAG_ALARM_ID,
+        );
         if (native && native.length > 0) {
           return native.map((a: any) => ({
             id: a.id,
@@ -420,6 +430,7 @@ export function mapDbToUiAlarm(dbAlarm: any): Alarm {
     enabled: !!dbAlarm.enabled,
     isOneTime: !parsedDays || parsedDays.length === 0,
     difficulty: (dbAlarm.difficulty as Difficulty) || 'standard',
+    soundId: dbAlarm.soundId ?? null,
   };
 }
 
@@ -502,7 +513,6 @@ export async function seedInitialAlarmsIfEmpty() {
   try {
     const existing = await db.select().from(alarmsTable);
     if (existing.length === 0) {
-      console.log('Seeding initial alarms into SQLite...');
       for (const initAlarm of INITIAL_ALARMS) {
         const challengeId = getChallengeId(initAlarm.challenge);
         const [inserted] = await db.insert(alarmsTable).values({
@@ -539,6 +549,7 @@ export const alarmStore = {
       days: alarmData.days,
       challenge: challengeId,
       difficulty: alarmData.difficulty || 'standard',
+      soundId: alarmData.soundId ?? null,
       enabled: true,
     }).returning();
 
@@ -574,6 +585,7 @@ export const alarmStore = {
           days: alarmData.days,
           challenge: challengeId,
           difficulty: alarmData.difficulty || 'standard',
+          soundId: alarmData.soundId ?? null,
           enabled: true, // Auto-enable on edit
         })
         .where(eq(alarmsTable.id, numericId));

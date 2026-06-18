@@ -1,4 +1,7 @@
 import SFIcon from '@/components/SF-icon';
+import SoundPicker from '@/components/sound-picker';
+import { getAlarmSound } from '@/utils/alarm-sounds';
+import { getDefaultSoundId, setDefaultSoundId } from '@/utils/settings-store';
 import {
   InstrumentSerif_400Regular_Italic,
   useFonts,
@@ -436,9 +439,25 @@ export default function SettingsScreen({
   });
 
   const [mode, setMode] = useState<ThemeMode>(globalThemeMode);
-  const [sound, setSound] = useState(true);
   const [haptics, setHaptics] = useState(true);
   const [autoSilence, setAutoSilence] = useState(false);
+  const [defaultSound, setDefaultSound] = useState<string | null>(null);
+  const [soundPickerOpen, setSoundPickerOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDefaultSoundId().then((id) => {
+      if (!cancelled) setDefaultSound(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSelectSound = (id: string) => {
+    setDefaultSound(id);
+    setDefaultSoundId(id);
+  };
 
   if (!fontsLoaded) return null;
 
@@ -517,8 +536,9 @@ export default function SettingsScreen({
           <Row
             icon={Icon.wave(theme.accent)}
             title="Sound"
-            subtitle={sound ? 'Sunrise chimes' : 'Silent'}
-            right={<Toggle value={sound} onChange={() => setSound((s) => !s)} theme={theme} />}
+            subtitle={getAlarmSound(defaultSound).name}
+            right={<Chevron theme={theme} />}
+            onPress={() => setSoundPickerOpen(true)}
             theme={theme}
           />
           <Divider theme={theme} />
@@ -591,6 +611,14 @@ export default function SettingsScreen({
 
         <View style={{ height: 40 }} />
       </Animated.ScrollView>
+
+      <SoundPicker
+        visible={soundPickerOpen}
+        selectedId={defaultSound}
+        onSelect={handleSelectSound}
+        onClose={() => setSoundPickerOpen(false)}
+        theme={theme}
+      />
     </View>
   );
 }

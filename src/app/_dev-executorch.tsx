@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { usePoseEstimation, models } from 'react-native-executorch';
-import { Asset } from 'expo-asset';
-import { THEMES } from '@/constants/theme';
 import SFIcon from '@/components/SF-icon';
+import { THEMES } from '@/constants/theme';
+import { Asset } from 'expo-asset';
+import { useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { models, usePoseEstimation } from 'react-native-executorch';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function DevExecutorchScreen() {
   const theme = THEMES.dark; // Premium dark diagnostics theme
@@ -73,7 +73,6 @@ export default function DevExecutorchScreen() {
           `Keypoint Details:\n` +
           validKeypoints.map(([name, kp]: [string, any]) => `• ${name}: (${kp.x.toFixed(1)}, ${kp.y.toFixed(1)})`).join('\n')
         );
-        console.log('ExecuTorch pose detection result:', results);
       } else {
         setKeypointCount(0);
         setInferenceResult(`Inference completed in ${end - start}ms, but no people were detected in the image.`);

@@ -1,6 +1,17 @@
+import ActiveAlarmOverlay from '@/components/active-alarm-overlay';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import ActiveAlarmOverlay, { type ActiveAlarm } from '@/components/active-alarm-overlay';
 import { db } from '@/db/db';
+import { alarms as alarmsTable } from '@/db/schema';
+import type { ChallengeResult } from '@/types/challenge';
+import { setActiveAlarm, useActiveAlarm, type ActiveAlarm } from '@/utils/active-alarm-store';
+import {
+  getPendingAlarm,
+  NAG_ALARM_ID,
+  safeAlarmKit,
+  safeSnoozeActivity,
+  uuidToDbId,
+} from '@/utils/alarm-store';
+import { getDefaultSoundId } from '@/utils/settings-store';
 import { InstrumentSerif_400Regular_Italic } from '@expo-google-fonts/instrument-serif';
 import {
   Sora_400Regular,
@@ -9,6 +20,7 @@ import {
   Sora_700Bold,
 } from '@expo-google-fonts/sora';
 import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
+import { eq } from 'drizzle-orm';
 import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
 import { requireOptionalNativeModule } from 'expo';
 import { useFonts } from 'expo-font';
@@ -17,21 +29,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Text, useColorScheme, View, AppState } from 'react-native';
-import { initExecutorch, models, usePoseEstimation, useObjectDetection, YOLO26N } from 'react-native-executorch';
+import { ActivityIndicator, AppState, Text, useColorScheme, View } from 'react-native';
+import { initExecutorch, models, useObjectDetection, usePoseEstimation, YOLO26N } from 'react-native-executorch';
 import { ExpoResourceFetcher } from 'react-native-executorch-expo-resource-fetcher';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import migrations from '../../drizzle/migrations';
-import { alarms as alarmsTable } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-import {
-  safeAlarmKit,
-  uuidToDbId,
-  resolveAlarmAndRecord,
-  getPendingAlarm,
-} from '@/utils/alarm-store';
-import type { ChallengeResult } from '@/types/challenge';
-import type { ChallengeType, Difficulty } from '@/db/schema';
 
 // Initialize ExecuTorch once at the app entry point
 try {
@@ -79,9 +81,10 @@ export default function RootLayout() {
   }, [loaded, error]);
 
   // ── Active alarm overlay state ───────────────────────────────────────
-  const [activeAlarm, setActiveAlarm] = useState<ActiveAlarm | null>(null);
-  const firedAtRef = useState(() => new Date())[0]; // stable ref for firedAt
-  const [firedAt, setFiredAt] = useState<Date>(new Date());
+  // Read the shared store for our own logic (cold-launch dedupe, debug). The
+  // overlay itself ALSO subscribes to the same store directly, so it no longer
+  // depends on this component re-rendering it through props.
+  const activeAlarm = useActiveAlarm();
 
   // ── Handle alarm trigger payloads (cold + warm launch) ───────────────
   // When an alarm fires, instead of navigating to /ringing we set overlay state.
@@ -89,14 +92,50 @@ export default function RootLayout() {
     async (payload: { payload: string; alarmId?: string; fireDate?: string; title?: string }) => {
       if (!payload) return;
 
+      // A dismiss from a native nag re-fire (alarm-nag.ts) only exists to pull
+      // the app to the foreground. The real alarm's pending flag already keeps
+      // the gate up with the correct challenge, so ignore it — otherwise we'd
+      // overwrite the active alarm with the math fallback (NAG_ALARM_ID can't
+      // be decoded to a real alarm row).
+      if (payload.alarmId === NAG_ALARM_ID) {
+        return;
+      }
+
+      // Snooze: this read is destructive (getLaunchPayload clears the payload),
+      // so the root layout must own it for BOTH types — otherwise whichever
+      // screen reads first consumes the payload and the other gets null. Start
+      // the snooze countdown Live Activity here.
+      if (payload.payload === 'snooze' && payload.fireDate) {
+        try {
+          safeSnoozeActivity.endAll();
+          safeSnoozeActivity.start({
+            fireDate: new Date(payload.fireDate).getTime(),
+            title: payload.title || 'Alarm',
+          });
+        } catch (err) {
+          console.error('Error starting snooze activity:', err);
+        }
+        return;
+      }
+
       if (payload.payload === 'dismiss' && payload.alarmId) {
         try {
           // Look up the alarm to get challenge + difficulty
           const numericId = uuidToDbId(payload.alarmId);
           let challenge: string = 'math';
           let difficulty: ActiveAlarm['difficulty'] = 'standard';
+          let soundId: string | null = null;
 
-          if (numericId !== null) {
+          if (numericId === null) {
+            // The dismiss payload's id isn't in our reversible scheme, so we
+            // can't find the alarm and fall back to math. If this fires, the
+            // scheduled id and the payload id have diverged.
+            console.warn(
+              '[handleAlarmPayload] Could not decode dbId from alarmId',
+              payload.alarmId,
+              '— falling back to math challenge.',
+            );
+          } else {
             const [dbAlarm] = await db
               .select()
               .from(alarmsTable)
@@ -104,6 +143,17 @@ export default function RootLayout() {
             if (dbAlarm) {
               challenge = dbAlarm.challenge;
               difficulty = dbAlarm.difficulty as ActiveAlarm['difficulty'];
+              // Per-alarm sound is an override; when unset, fall back to the
+              // user's default sound from Settings (not the registry default).
+              soundId = dbAlarm.soundId ?? (await getDefaultSoundId());
+            } else {
+              console.warn(
+                '[handleAlarmPayload] No alarm row for dbId',
+                numericId,
+                '(from',
+                payload.alarmId,
+                ') — falling back to math challenge.',
+              );
             }
           }
 
@@ -111,8 +161,8 @@ export default function RootLayout() {
             alarmId: payload.alarmId,
             challenge,
             difficulty,
+            soundId,
           });
-          setFiredAt(new Date());
         } catch (err) {
           console.error('Error handling alarm payload:', err);
           // Even on error, show the gate with math fallback
@@ -121,7 +171,6 @@ export default function RootLayout() {
             challenge: 'math',
             difficulty: 'standard',
           });
-          setFiredAt(new Date());
         }
       }
       // Snooze payloads are handled by the home screen (Live Activity)
@@ -142,8 +191,8 @@ export default function RootLayout() {
             alarmId: pending.alarmId,
             challenge: pending.challenge,
             difficulty: pending.difficulty as ActiveAlarm['difficulty'],
+            soundId: pending.soundId ?? null,
           });
-          setFiredAt(new Date());
         }
       } catch (err) {
         console.error('Error checking pending alarm on launch:', err);
@@ -161,9 +210,10 @@ export default function RootLayout() {
     const sub = AppState.addEventListener('change', async (nextState) => {
       if (nextState === 'active') {
         try {
-          // Check for native launch payload first (e.g., if woken up by the lock screen Dismiss action)
+          // Check for native launch payload first (e.g., if woken up by the lock screen Dismiss action).
+          // This read is destructive, so forward ANY payload type — handleAlarmPayload routes it.
           const coldPayload = safeAlarmKit.getLaunchPayload();
-          if (coldPayload && coldPayload.payload === 'dismiss' && coldPayload.alarmId) {
+            if (coldPayload && coldPayload.payload) {
             handleAlarmPayload(coldPayload);
             return;
           }
@@ -179,8 +229,8 @@ export default function RootLayout() {
                 alarmId: pending.alarmId,
                 challenge: pending.challenge,
                 difficulty: pending.difficulty as ActiveAlarm['difficulty'],
+                soundId: pending.soundId ?? null,
               });
-              setFiredAt(new Date());
             }
           } catch {}
         }
@@ -195,7 +245,7 @@ export default function RootLayout() {
       const timer = setTimeout(() => {
         try {
           const coldPayload = safeAlarmKit.getLaunchPayload();
-          if (coldPayload && coldPayload.payload === 'dismiss' && coldPayload.alarmId) {
+          if (coldPayload && coldPayload.payload) {
             handleAlarmPayload(coldPayload);
           }
         } catch (err) {
@@ -220,23 +270,10 @@ export default function RootLayout() {
   // ── Challenge completed handler ──────────────────────────────────────
   const handleAlarmCompleted = useCallback(
     async (alarm: ActiveAlarm, result: ChallengeResult) => {
-      try {
-        await resolveAlarmAndRecord({
-          alarmId: alarm.alarmId,
-          challenge: alarm.challenge as ChallengeType,
-          difficulty: alarm.difficulty as Difficulty,
-          firedAt,
-          outcome: 'dismissed',
-          attempts: result.attempts,
-          snoozeCount: 0,
-        });
-      } catch (err) {
-        console.error('Error recording alarm event:', err);
-      }
-      // Always clear the overlay regardless of logging success
+      // Always clear the overlay. The overlay itself now handles the DB writing.
       setActiveAlarm(null);
     },
-    [firedAt],
+    [],
   );
 
   const [preloads, setPreloads] = useState({ pose: false, object: false });
@@ -321,22 +358,24 @@ export default function RootLayout() {
           useSuspense
         >
           <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-            <AnimatedSplashOverlay />
-            <StatusBar style={isDark ? 'light' : 'dark'} />
-            <ModelWarmer pose={preloads.pose} object={preloads.object} />
+            <View style={{ flex: 1 }}>
+              <AnimatedSplashOverlay />
+              <StatusBar style={isDark ? 'light' : 'dark'} />
+              <ModelWarmer pose={preloads.pose} object={preloads.object} />
 
-            {/* The gate — rendered ABOVE the navigator, driven by state. */}
-            <ActiveAlarmOverlay
-              alarm={activeAlarm}
-              onCompleted={handleAlarmCompleted}
-              allowGiveUp={false}
-            />
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="index" />
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="ringing" options={{ gestureEnabled: false, animation: 'fade' }} />
+              </Stack>
 
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="index" />
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="ringing" options={{ gestureEnabled: false, animation: 'fade' }} />
-            </Stack>
+              {/* The gate — a self-subscribing Modal (portal), so it floats
+                  above the navigator and re-renders itself from the store. */}
+              <ActiveAlarmOverlay
+                onCompleted={handleAlarmCompleted}
+                allowGiveUp={false}
+              />
+            </View>
           </ThemeProvider>
         </SQLiteProvider>
       </Suspense>
