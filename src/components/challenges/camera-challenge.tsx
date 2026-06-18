@@ -51,6 +51,9 @@ export type CameraChallengeProps = {
   onAbort?: () => void;
   children?: React.ReactNode; // overlay (rep counter, bbox, hints)
   isActive?: boolean;
+  hideDefaultAbort?: boolean;
+  torch?: 'off' | 'on';
+  zoom?: number;
 };
 
 export default function CameraChallenge({
@@ -63,6 +66,9 @@ export default function CameraChallenge({
   onAbort,
   children,
   isActive = true,
+  hideDefaultAbort = false,
+  torch = 'off',
+  zoom,
 }: CameraChallengeProps) {
   const isDark = useColorScheme() !== 'light';
   const theme = isDark ? THEMES.dark : THEMES.light;
@@ -220,6 +226,8 @@ export default function CameraChallenge({
         outputs={[frameOutput]}
         isActive={isActive}
         orientationSource="device"
+        torchMode={torch}
+        zoom={zoom}
       />
 
       {/* Top instruction */}
@@ -234,13 +242,19 @@ export default function CameraChallenge({
         {children}
       </View>
 
-      {showAbort && AbortButton}
+      {showAbort && !hideDefaultAbort && AbortButton}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000' },
+  root: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    alignSelf: 'stretch',
+    backgroundColor: '#000',
+  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -277,7 +291,7 @@ const styles = StyleSheet.create({
   ctaText: { fontFamily: 'Sora_600SemiBold', fontSize: 14 },
   instructionWrap: {
     position: 'absolute',
-    top: 64,
+    top: 96,
     alignSelf: 'center',
     backgroundColor: 'rgba(0,0,0,0.45)',
     borderRadius: 999,

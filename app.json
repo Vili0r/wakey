@@ -12,10 +12,12 @@
       "icon": "./assets/expo.icon",
       "infoPlist": {
         "NSAlarmKitUsageDescription": "This application requires permission to schedule and manage alarms.",
-        "NSCameraUsageDescription": "Dawned uses the camera to verify you've completed your wake-up challenge.",
+        "NSCameraUsageDescription": "Wakey uses the camera to verify you've completed your wake-up challenge.",
         "NSSupportsLiveActivities": true,
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       },
       "bundleIdentifier": "com.tsouvili.wakey",
       "entitlements": {

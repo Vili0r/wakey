@@ -176,8 +176,7 @@ export default function HomeScreen() {
             <View>
               <Text style={[styles.greeting, { color: theme.textDim }]}>
                 {greeting(now)}
-              </Text>
-              <Text style={[styles.brand, { color: theme.text }]}>Dawned</Text>
+              </Text> 
             </View>
             <Link href="/home/new-alarm" asChild>
               <GlassButton isDark={isDark} style={styles.headerRightBtnGlass}>
@@ -292,14 +291,9 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontFamily: 'Sora_400Regular',
-    fontSize: 13,
+    fontSize: 18,
     letterSpacing: 0.2,
     marginBottom: 2,
-  },
-  brand: {
-    fontFamily: 'InstrumentSerif_400Regular_Italic',
-    fontSize: 26,
-    letterSpacing: 0.3,
   },
   hero: { alignItems: 'center', marginBottom: 8 },
   eyebrow: {

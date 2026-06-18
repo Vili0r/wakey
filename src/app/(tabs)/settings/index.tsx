@@ -580,7 +580,7 @@ export default function SettingsScreen({
         <Group label="ACCOUNT" delay={210} theme={theme}>
           <Row
             icon={Icon.star(theme.accent)}
-            title="Dawned Plus"
+            title="Wakey Plus"
             subtitle="Unlock every challenge & sound"
             right={<Chevron theme={theme} />}
             onPress={() => {}}
@@ -606,7 +606,7 @@ export default function SettingsScreen({
         </Group>
 
         <Text style={[styles.footer, { color: theme.textFaint }]}>
-          Made for mornings · Dawned
+          Made for mornings
         </Text>
 
         <View style={{ height: 40 }} />

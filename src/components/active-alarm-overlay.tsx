@@ -35,6 +35,9 @@ import PushupsChallenge from './challenges/pushups-challenge';
 import ShakeChallenge from './challenges/shake-challenge';
 import SquatsChallenge from './challenges/squats-challenge';
 import StepsChallenge from './challenges/steps-challenge';
+import PhotoChallenge from './challenges/photo-challenge';
+import BedChallenge from './challenges/bed-challenge';
+import MedsChallenge from './challenges/meds-challenge';
 
 export type { ActiveAlarm };
 
@@ -350,6 +353,12 @@ function ChallengeView({
     case 'scan':
     case 'find-item':
       return <FindItemChallenge onComplete={onComplete} onAbort={onAbort} />;
+    case 'photo':
+      return <PhotoChallenge {...common} />;
+    case 'bed':
+      return <BedChallenge {...common} />;
+    case 'meds':
+      return <MedsChallenge {...common} />;
     case 'math':
       return <MathChallenge {...common} />;
     case 'shake':

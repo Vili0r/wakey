@@ -1,12 +1,3 @@
-/**
- * SoundPicker — a bottom-sheet list of selectable alarm tones.
- *
- * Reads the catalogue from src/utils/alarm-sounds.ts, so adding a tone there is
- * all it takes to make it appear here. Tapping a row selects it AND plays a
- * short preview; the preview is stopped when the sheet closes. Used by both the
- * New Alarm screen (per-alarm sound) and Settings (default sound).
- */
-
 import SFIcon from '@/components/SF-icon';
 import { ALARM_SOUNDS, previewSound, stopPreview } from '@/utils/alarm-sounds';
 import { Haptics } from '@/utils/alarm-store';
@@ -19,7 +10,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
 /** Only the theme tokens this sheet reads — works with any screen's theme object. */
 type SoundPickerTheme = {
@@ -71,8 +61,7 @@ export default function SoundPicker({
       onRequestClose={handleClose}
     >
       <Pressable style={styles.backdrop} onPress={handleClose}>
-        <Animated.View
-          entering={FadeInDown.springify().damping(22)}
+        <View
           style={[
             styles.sheet,
             { backgroundColor: theme.bg, borderColor: theme.surfaceBorder },
@@ -141,7 +130,7 @@ export default function SoundPicker({
           >
             <Text style={[styles.doneText, { color: theme.fabText }]}>Done</Text>
           </Pressable>
-        </Animated.View>
+        </View>
       </Pressable>
     </Modal>
   );
