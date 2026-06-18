@@ -9,6 +9,11 @@ import {
 } from '@expo-google-fonts/sora';
 import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
 import { useEffect, useMemo, useState } from 'react';
+import { db } from '@/db/db';
+import { alarmEvents, alarms as alarmsTable, streakDays, streakState, ChallengeType } from '@/db/schema';
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { eq, desc } from 'drizzle-orm';
+import { getLocalDayStr, seedDemoInsightsData } from '@/utils/alarm-store';
 import {
   Platform,
   Pressable,
@@ -90,7 +95,7 @@ export type InsightsData = {
   challenges: { glyph: string; name: string; beaten: number; total: number }[];
 };
 
-const DEFAULT_DATA: InsightsData = {
+export const DEFAULT_DATA: InsightsData = {
   currentStreak: 3,
   longestStreak: 12,
   totalBeaten: 47,
@@ -498,7 +503,7 @@ function PeriodSegment({
 
 export default function InsightsScreen({
   isDark: propIsDark,
-  data = DEFAULT_DATA,
+  data: propData,
   onClose,
 }: {
   isDark?: boolean;
@@ -521,16 +526,190 @@ export default function InsightsScreen({
 
   const [period, setPeriod] = useState(0);
 
+  // 1. Fetch data reactively from Drizzle
+  const { data: dbStreakState = [] } = useLiveQuery(
+    db.select().from(streakState).where(eq(streakState.id, 1))
+  );
+  const { data: dbEvents = [] } = useLiveQuery(
+    db.select().from(alarmEvents).orderBy(desc(alarmEvents.firedAt))
+  );
+  const { data: dbStreakDays = [] } = useLiveQuery(
+    db.select().from(streakDays).orderBy(desc(streakDays.day))
+  );
+  const { data: dbAlarms = [] } = useLiveQuery(
+    db.select().from(alarmsTable)
+  );
+
+  // 2. Compute statistics dynamically
+  const computedData = useMemo(() => {
+    if (propData) return propData;
+
+    const state = dbStreakState[0] || { currentStreak: 0, longestStreak: 0, totalBeaten: 0 };
+
+    const beatenEvents = dbEvents.filter(
+      (e) => e.outcome === 'dismissed' || e.outcome === 'dismissed_assisted'
+    );
+    const totalBeaten = state.totalBeaten || beatenEvents.length;
+
+    const durationMsList = beatenEvents
+      .map((e) => e.durationMs)
+      .filter((d): d is number => d !== null);
+    const avgSilenceSec =
+      durationMsList.length > 0
+        ? Math.round(durationMsList.reduce((acc, val) => acc + val, 0) / durationMsList.length / 1000)
+        : 0;
+
+    const onTimeEvents = beatenEvents.filter((e) => e.snoozeCount === 0);
+    const onTimeRate = beatenEvents.length > 0 ? onTimeEvents.length / beatenEvents.length : 1.0;
+
+    const snoozedEvents = beatenEvents.filter((e) => e.snoozeCount > 0);
+    const snoozeRate = beatenEvents.length > 0 ? snoozedEvents.length / beatenEvents.length : 0.0;
+
+    const enabledAlarms = dbAlarms.filter((a) => a.enabled);
+    let targetMinutes = 7 * 60; // 7:00 AM default
+    if (enabledAlarms.length > 0) {
+      const earliestAlarm = enabledAlarms.reduce((min, a) => {
+        const timeA = a.hour * 60 + a.minute;
+        const timeMin = min.hour * 60 + min.minute;
+        return timeA < timeMin ? a : min;
+      });
+      targetMinutes = earliestAlarm.hour * 60 + earliestAlarm.minute;
+    }
+
+    const daysOfWeekLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    const getMondayStartIdx = (day: number) => (day === 0 ? 6 : day - 1);
+
+    const now = new Date();
+    let rhythmFilteredDays: typeof dbStreakDays = [];
+
+    if (period === 0) {
+      const currentDay = now.getDay();
+      const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1;
+      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distanceToMonday);
+      monday.setHours(0, 0, 0, 0);
+      rhythmFilteredDays = dbStreakDays.filter((d) => {
+        const date = new Date(d.firstBeatenAt || d.createdAt);
+        return date >= monday;
+      });
+    } else if (period === 1) {
+      const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+      thirtyDaysAgo.setHours(0, 0, 0, 0);
+      rhythmFilteredDays = dbStreakDays.filter((d) => {
+        const date = new Date(d.firstBeatenAt || d.createdAt);
+        return date >= thirtyDaysAgo;
+      });
+    } else {
+      const yearAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365);
+      yearAgo.setHours(0, 0, 0, 0);
+      rhythmFilteredDays = dbStreakDays.filter((d) => {
+        const date = new Date(d.firstBeatenAt || d.createdAt);
+        return date >= yearAgo;
+      });
+    }
+
+    const weekdaySums = Array.from({ length: 7 }, () => 0);
+    const weekdayCounts = Array.from({ length: 7 }, () => 0);
+
+    rhythmFilteredDays.forEach((sd) => {
+      if (sd.firstBeatenAt) {
+        const date = new Date(sd.firstBeatenAt);
+        const dayIdx = getMondayStartIdx(date.getDay());
+        const minutes = date.getHours() * 60 + date.getMinutes();
+        weekdaySums[dayIdx] += minutes;
+        weekdayCounts[dayIdx]++;
+      }
+    });
+
+    const rhythm = daysOfWeekLabels.map((label, idx) => {
+      const count = weekdayCounts[idx];
+      const minutes = count > 0 ? Math.round(weekdaySums[idx] / count) : null;
+      return { label, minutes };
+    });
+
+    const heatmap: number[] = [];
+    const streakDayMap = new Map<string, number>();
+    dbStreakDays.forEach((d) => {
+      streakDayMap.set(d.day, d.beatenCount);
+    });
+
+    for (let i = 69; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const dayStr = getLocalDayStr(d);
+      const count = streakDayMap.get(dayStr) || 0;
+      heatmap.push(count > 2 ? 2 : count);
+    }
+
+    const CHALLENGES_MAP: Record<ChallengeType, { glyph: string; name: string }> = {
+      math: { glyph: '÷', name: 'Equations' },
+      shake: { glyph: '≈', name: 'Shake' },
+      pattern: { glyph: '◫', name: 'Pattern recall' },
+      steps: { glyph: '∴', name: 'Steps' },
+      pushups: { glyph: '⤓', name: 'Push-ups' },
+      squats: { glyph: '⇕', name: 'Squats' },
+      photo: { glyph: '◎', name: 'Sky photo' },
+      scan: { glyph: '⊡', name: 'Code hunt' },
+      'find-item': { glyph: '⊡', name: 'Find an item' },
+      bed: { glyph: '▭', name: 'Make your bed' },
+      meds: { glyph: '✚', name: 'Medication' },
+    };
+
+    const challengeStats: Record<string, { beaten: number; total: number }> = {};
+    Object.keys(CHALLENGES_MAP).forEach((key) => {
+      challengeStats[key] = { beaten: 0, total: 0 };
+    });
+
+    dbEvents.forEach((e) => {
+      const type = e.challenge;
+      if (challengeStats[type]) {
+        challengeStats[type].total++;
+        if (e.outcome === 'dismissed' || e.outcome === 'dismissed_assisted') {
+          challengeStats[type].beaten++;
+        }
+      }
+    });
+
+    let challenges = Object.entries(challengeStats)
+      .filter(([_, stats]) => stats.total > 0)
+      .map(([key, stats]) => {
+        const item = CHALLENGES_MAP[key as ChallengeType];
+        return {
+          glyph: item.glyph,
+          name: item.name,
+          beaten: stats.beaten,
+          total: stats.total,
+        };
+      });
+
+    if (challenges.length === 0) {
+      challenges = [
+        { glyph: '÷', name: 'Equations', beaten: 0, total: 0 },
+        { glyph: '≈', name: 'Shake', beaten: 0, total: 0 },
+      ];
+    }
+
+    return {
+      currentStreak: state.currentStreak,
+      longestStreak: state.longestStreak,
+      totalBeaten,
+      avgSilenceSec,
+      onTimeRate,
+      snoozeRate,
+      rhythm,
+      targetMinutes,
+      heatmap,
+      challenges,
+    };
+  }, [propData, dbStreakState, dbEvents, dbStreakDays, dbAlarms, period]);
+
   const cardW = width - 40; // screen padding 20 each side
   const innerW = cardW - 40; // card padding 20 each side
 
-  // Sun rises as the streak grows toward the longest — a tiny progress halo.
   const streakProgress = useMemo(
     () =>
-      data.longestStreak > 0
-        ? Math.min(data.currentStreak / data.longestStreak, 1)
+      computedData.longestStreak > 0
+        ? Math.min(computedData.currentStreak / computedData.longestStreak, 1)
         : 0,
-    [data.currentStreak, data.longestStreak],
+    [computedData.currentStreak, computedData.longestStreak],
   );
 
   if (!fontsLoaded) return null;
@@ -548,6 +727,76 @@ export default function InsightsScreen({
         >
           <PeriodSegment index={period} onChange={setPeriod} theme={theme} width={width - 40} />
         </Animated.View>
+
+        {computedData.totalBeaten === 0 && (
+          <Animated.View
+            entering={FadeInDown.delay(100).springify().damping(18)}
+            style={[
+              styles.card,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.surfaceBorder,
+                alignItems: 'center',
+                paddingVertical: 32,
+                marginTop: 14,
+                gap: 16,
+              },
+            ]}
+          >
+            <Text
+              style={{
+                fontFamily: 'InstrumentSerif_400Regular_Italic',
+                fontSize: 22,
+                color: theme.text,
+                textAlign: 'center',
+              }}
+            >
+              No morning data yet
+            </Text>
+            <Text
+              style={{
+                fontFamily: 'Sora_400Regular',
+                fontSize: 13,
+                color: theme.textDim,
+                textAlign: 'center',
+                lineHeight: 18,
+                paddingHorizontal: 20,
+              }}
+            >
+              Wake up with Wakey to build your streak, or generate demo data to see insights in action.
+            </Text>
+            <Pressable
+              onPress={async () => {
+                try {
+                  await seedDemoInsightsData();
+                } catch (err) {
+                  console.error(err);
+                }
+              }}
+              style={({ pressed }) => [
+                {
+                  backgroundColor: theme.chipBg,
+                  borderColor: theme.accent,
+                  borderWidth: 1,
+                  paddingVertical: 10,
+                  paddingHorizontal: 20,
+                  borderRadius: 99,
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  color: theme.chipText,
+                  fontFamily: 'Sora_600SemiBold',
+                  fontSize: 13,
+                }}
+              >
+                Seed 70-Day Demo Data
+              </Text>
+            </Pressable>
+          </Animated.View>
+        )}
 
         {/* Streak hero */}
         <Animated.View entering={FadeInDown.delay(80).springify().damping(18)}>
@@ -590,7 +839,7 @@ export default function InsightsScreen({
               </Svg>
               <View style={styles.heroCenter}>
                 <Text style={[styles.heroNumber, { color: theme.text }]}>
-                  {data.currentStreak}
+                  {computedData.currentStreak}
                 </Text>
                 <Text style={[styles.heroUnit, { color: theme.accentDeep }]}>
                   DAY STREAK
@@ -599,9 +848,9 @@ export default function InsightsScreen({
             </View>
 
             <Text style={[styles.heroSub, { color: theme.textDim }]}>
-              {data.currentStreak >= data.longestStreak && data.currentStreak > 0
+              {computedData.currentStreak >= computedData.longestStreak && computedData.currentStreak > 0
                 ? 'Your best run yet. Keep the sun coming up.'
-                : `Longest run: ${data.longestStreak} days`}
+                : `Longest run: ${computedData.longestStreak} days`}
             </Text>
           </View>
         </Animated.View>
@@ -611,11 +860,11 @@ export default function InsightsScreen({
           entering={FadeInDown.delay(130).springify().damping(18)}
           style={styles.tileGrid}
         >
-          <StatTile value={String(data.totalBeaten)} label="ALARMS BEATEN" theme={theme} />
-          <StatTile value={String(data.longestStreak)} unit="days" label="LONGEST STREAK" theme={theme} />
-          <StatTile value={String(data.avgSilenceSec)} unit="sec" label="AVG TO SILENCE" theme={theme} />
+          <StatTile value={String(computedData.totalBeaten)} label="ALARMS BEATEN" theme={theme} />
+          <StatTile value={String(computedData.longestStreak)} unit="days" label="LONGEST STREAK" theme={theme} />
+          <StatTile value={String(computedData.avgSilenceSec)} unit="sec" label="AVG TO SILENCE" theme={theme} />
           <StatTile
-            value={`${Math.round(data.onTimeRate * 100)}`}
+            value={`${Math.round(computedData.onTimeRate * 100)}`}
             unit="%"
             label="ON-TIME RATE"
             theme={theme}
@@ -634,8 +883,8 @@ export default function InsightsScreen({
             ]}
           >
             <RhythmChart
-              data={data.rhythm}
-              target={data.targetMinutes}
+              data={computedData.rhythm}
+              target={computedData.targetMinutes}
               theme={theme}
               width={innerW}
             />
@@ -653,7 +902,7 @@ export default function InsightsScreen({
               { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
             ]}
           >
-            <Heatmap values={data.heatmap} theme={theme} width={innerW} />
+            <Heatmap values={computedData.heatmap} theme={theme} width={innerW} />
             <View style={styles.legendRow}>
               <Text style={[styles.legendText, { color: theme.textFaint }]}>Less</Text>
               <View style={[styles.legendCell, { backgroundColor: theme.track }]} />
@@ -677,7 +926,7 @@ export default function InsightsScreen({
               { backgroundColor: theme.surface, borderColor: theme.surfaceBorder, gap: 16 },
             ]}
           >
-            {data.challenges.map((c, i) => (
+            {computedData.challenges.map((c, i) => (
               <ChallengeBar key={c.name} {...c} delay={300 + i * 90} theme={theme} />
             ))}
           </View>

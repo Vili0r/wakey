@@ -819,3 +819,172 @@ export async function resolveAlarmAndRecord({
     }
   }
 }
+
+export async function clearAllDatabaseData() {
+  await db.delete(alarmEvents);
+  await db.delete(streakDays);
+  await db.delete(streakState);
+  await db.delete(alarmsTable);
+}
+
+export async function seedDemoInsightsData() {
+  // 1. Clear existing history first
+  await db.delete(alarmEvents);
+  await db.delete(streakDays);
+  await db.delete(streakState);
+
+  const now = new Date();
+  const daysToSeed = 70;
+  const challengeTypes: ChallengeType[] = ['math', 'shake', 'pattern', 'steps', 'pushups', 'squats', 'photo', 'scan', 'find-item', 'bed', 'meds'];
+
+  // Keep track of which days we beat alarms
+  const beatenDays: { date: Date; localDay: string; count: number; firstBeatenAt: Date }[] = [];
+
+  for (let i = daysToSeed; i >= 0; i--) {
+    const seedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const localDay = getLocalDayStr(seedDate);
+
+    // 80% chance to beat alarm on a weekday, 60% on weekends
+    const dayOfWeek = seedDate.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const probability = isWeekend ? 0.65 : 0.85;
+
+    if (Math.random() < probability) {
+      // 1 or 2 alarms beaten on this day
+      const count = Math.random() < 0.25 ? 2 : 1;
+      let firstBeatenAt: Date | null = null;
+
+      for (let c = 0; c < count; c++) {
+        // Earliest alarm at e.g. 7:00 AM or 7:30 AM
+        const hour = isWeekend ? 8 : 7;
+        const minute = Math.floor(Math.random() * 30); // 0 to 29
+        const firedAt = new Date(seedDate.getFullYear(), seedDate.getMonth(), seedDate.getDate(), hour, minute, 0);
+
+        const challenge = challengeTypes[Math.floor(Math.random() * challengeTypes.length)];
+        const difficulty = (['gentle', 'standard', 'brutal'] as const)[Math.floor(Math.random() * 3)];
+        
+        // 20% chance of snoozing
+        const hasSnoozed = Math.random() < 0.2;
+        const snoozeCount = hasSnoozed ? Math.floor(Math.random() * 2) + 1 : 0;
+        
+        // duration: if snoozed, takes longer (e.g. 9 mins per snooze + 30-90s challenge)
+        // if not snoozed, takes 15-80 seconds
+        const snoozeTimeMs = snoozeCount * 9 * 60 * 1000;
+        const solveTimeMs = Math.floor(Math.random() * 65000) + 15000;
+        const durationMs = snoozeTimeMs + solveTimeMs;
+        const resolvedAt = new Date(firedAt.getTime() + durationMs);
+
+        if (!firstBeatenAt || resolvedAt < firstBeatenAt) {
+          firstBeatenAt = resolvedAt;
+        }
+
+        // Write alarm event
+        await db.insert(alarmEvents).values({
+          challenge,
+          difficulty,
+          firedAt,
+          resolvedAt,
+          outcome: 'dismissed',
+          durationMs,
+          snoozeCount,
+          attempts: Math.floor(Math.random() * 2) + 1,
+          localDay,
+        });
+      }
+
+      if (firstBeatenAt) {
+        beatenDays.push({
+          date: seedDate,
+          localDay,
+          count: count,
+          firstBeatenAt,
+        });
+
+        // Insert into streakDays
+        await db.insert(streakDays).values({
+          day: localDay,
+          beatenCount: count,
+          firstBeatenAt,
+        });
+      }
+    } else {
+      // missed/missed-alarm event occasionally to make it realistic
+      if (Math.random() < 0.3) {
+        const hour = isWeekend ? 8 : 7;
+        const minute = Math.floor(Math.random() * 30);
+        const firedAt = new Date(seedDate.getFullYear(), seedDate.getMonth(), seedDate.getDate(), hour, minute, 0);
+        const challenge = challengeTypes[Math.floor(Math.random() * challengeTypes.length)];
+        
+        await db.insert(alarmEvents).values({
+          challenge,
+          difficulty: 'standard',
+          firedAt,
+          outcome: 'missed',
+          localDay,
+        });
+      }
+    }
+  }
+
+  // Now calculate current and longest streaks based on beatenDays
+  const sortedEpochDays = beatenDays
+    .map((d) => {
+      const [y, mStr, dayNum] = d.localDay.split('-').map(Number);
+      const date = new Date(y, mStr - 1, dayNum);
+      return Math.round(date.getTime() / (24 * 60 * 60 * 1000));
+    })
+    .sort((a, b) => a - b);
+
+  const uniqueEpochDays = Array.from(new Set(sortedEpochDays));
+
+  let longestStreak = 0;
+  let tempStreak = 0;
+  let prevDay = null;
+
+  for (const epDay of uniqueEpochDays) {
+    if (prevDay === null) {
+      tempStreak = 1;
+    } else if (epDay === prevDay + 1) {
+      tempStreak++;
+    } else {
+      if (tempStreak > longestStreak) {
+        longestStreak = tempStreak;
+      }
+      tempStreak = 1;
+    }
+    prevDay = epDay;
+  }
+  if (tempStreak > longestStreak) {
+    longestStreak = tempStreak;
+  }
+
+  let currentStreak = 0;
+  const todayEpoch = Math.round(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / (24 * 60 * 60 * 1000));
+
+  if (uniqueEpochDays.length > 0) {
+    const lastEpDay = uniqueEpochDays[uniqueEpochDays.length - 1];
+    if (lastEpDay === todayEpoch || lastEpDay === todayEpoch - 1) {
+      currentStreak = 1;
+      for (let i = uniqueEpochDays.length - 2; i >= 0; i--) {
+        if (uniqueEpochDays[i] === uniqueEpochDays[i + 1] - 1) {
+          currentStreak++;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  const totalBeaten = beatenDays.reduce((acc, d) => acc + d.count, 0);
+  const lastBeatenDayStr = beatenDays.length > 0 ? beatenDays[beatenDays.length - 1].localDay : null;
+
+  await db.insert(streakState).values({
+    id: 1,
+    currentStreak,
+    longestStreak,
+    lastBeatenDay: lastBeatenDayStr,
+    totalBeaten,
+    updatedAt: new Date(),
+  });
+}
+

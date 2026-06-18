@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/immutability */
 import SFIcon from '@/components/SF-icon';
 import SoundPicker from '@/components/sound-picker';
 import { getAlarmSound } from '@/utils/alarm-sounds';
@@ -13,6 +14,11 @@ import {
 } from '@expo-google-fonts/sora';
 import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
 import React, { useEffect, useState } from 'react';
+import { db } from '@/db/db';
+import { streakState } from '@/db/schema';
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { clearAllDatabaseData, seedDemoInsightsData } from '@/utils/alarm-store';
+import { eq } from 'drizzle-orm';
 import {
   Appearance,
   Platform,
@@ -379,6 +385,8 @@ const Icon = {
   star: (c: string) => <SFIcon name="star" size={18} color={c} />,
   info: (c: string) => <SFIcon name="info.circle" size={18} color={c} />,
   logout: (c: string) => <SFIcon name="rectangle.portrait.and.arrow.right" size={18} color={c} />,
+  hammer: (c: string) => <SFIcon name="hammer" size={18} color={c} />,
+  trash: (c: string) => <SFIcon name="trash" size={18} color={c} />,
 };
 
 /* ------------------------------------------------------------------ */
@@ -444,6 +452,9 @@ export default function SettingsScreen({
   const [defaultSound, setDefaultSound] = useState<string | null>(null);
   const [soundPickerOpen, setSoundPickerOpen] = useState(false);
 
+  const { data: streakRows = [] } = useLiveQuery(db.select().from(streakState).where(eq(streakState.id, 1)));
+  const streak = streakRows[0] || { currentStreak: 0, totalBeaten: 0 };
+
   useEffect(() => {
     let cancelled = false;
     getDefaultSoundId().then((id) => {
@@ -502,12 +513,12 @@ export default function SettingsScreen({
                 Good morning
               </Text>
               <Text style={[styles.profileSub, { color: theme.textDim }]}>
-                12-day streak · 47 alarms beaten
+                {streak.currentStreak}-day streak · {streak.totalBeaten} alarms beaten
               </Text>
             </View>
             <View style={[styles.streakChip, { backgroundColor: theme.chipBg }]}>
               {Icon.flame(theme.chipText)}
-              <Text style={[styles.streakText, { color: theme.chipText }]}>12</Text>
+              <Text style={[styles.streakText, { color: theme.chipText }]}>{streak.currentStreak}</Text>
             </View>
           </View>
         </Animated.View>
@@ -601,6 +612,40 @@ export default function SettingsScreen({
             subtitle="Version 1.0.0"
             right={<Chevron theme={theme} />}
             onPress={() => {}}
+            theme={theme}
+          />
+        </Group>
+
+        {/* Developer / debug tools */}
+        <Group label="DEVELOPER / DEBUG" delay={270} theme={theme}>
+          <Row
+            icon={Icon.hammer(theme.accent)}
+            title="Seed 70-Day Demo Data"
+            subtitle="Generates 70 days of mock history"
+            right={<Chevron theme={theme} />}
+            onPress={async () => {
+              try {
+                await seedDemoInsightsData();
+              } catch (err) {
+                console.error('Failed to seed:', err);
+              }
+            }}
+            theme={theme}
+          />
+          <Divider theme={theme} />
+          <Row
+            icon={Icon.trash(theme.danger)}
+            title="Clear All Database Data"
+            subtitle="Resets all alarms, history & streaks"
+            danger
+            right={<Chevron theme={theme} />}
+            onPress={async () => {
+              try {
+                await clearAllDatabaseData();
+              } catch (err) {
+                console.error('Failed to clear:', err);
+              }
+            }}
             theme={theme}
           />
         </Group>
