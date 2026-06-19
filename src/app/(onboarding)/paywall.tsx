@@ -1,118 +1,101 @@
 /**
- * Screen 20 — placeholder paywall and the flow's exit. The only hard
- * requirement here is scheduling the trial-end reminder; the rest is stand-in
- * UI. Starting the trial persists onboarding (flag + wake time + answers),
- * seeds the first alarm, schedules the reminder, then routes into the app.
+ * Paywall 1/3 — "try it free", led by a looping in-app demo inside a phone
+ * frame. No charge happens here; the CTA just advances to the reminder step.
+ * Replace DEMO_VIDEO with a real app-capture asset (require('…')) when ready.
  */
 
-import { OB, OnboardingShell } from '@/components/onboarding/onboarding-shell';
-import { completeOnboarding } from '@/onboarding/persistence';
-import { TRIAL_DAYS, scheduleTrialEndReminder } from '@/onboarding/reminder';
-import { useOnboarding } from '@/onboarding/state';
+import { OB } from '@/components/onboarding/onboarding-shell';
+import { PaywallShell } from '@/components/onboarding/paywall-shell';
+import { PRICING } from '@/onboarding/pricing';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-const PLAN_ROWS: { title: string; sub: string }[] = [
-  { title: `${TRIAL_DAYS} days free`, sub: 'Full access from the first morning' },
-  { title: 'Then $3.99 / month', sub: 'Billed monthly · placeholder price' },
-  { title: 'Cancel anytime', sub: 'We remind you before the trial ends' },
-];
+// Placeholder clip — swap for a real Wakey screen-capture (local require or URL).
+const DEMO_VIDEO =
+  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+
+const LEGAL = ['Privacy Policy', 'Restore Purchase', 'Terms of Use'];
 
 export default function Paywall() {
-  const { state } = useOnboarding();
-  const [busy, setBusy] = useState(false);
+  const { width } = useWindowDimensions();
+  const frameW = Math.min(width * 0.62, 230);
+  const frameH = frameW * 2.1;
 
-  const startTrial = async () => {
-    if (busy) return;
-    setBusy(true);
-    // Reminder is the one paywall must-have; schedule it first.
-    await scheduleTrialEndReminder();
-    await completeOnboarding(state);
-    router.replace('/(tabs)/home');
-  };
+  const player = useVideoPlayer(DEMO_VIDEO, (p) => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
 
   return (
-    <OnboardingShell
-      progress={1}
-      showBack
-      eyebrow="START FREE"
-      title="Your mornings, starting tomorrow."
-      subtitle="You’ve set your time, made your pledge, and felt the loop. Begin the free trial and your first alarm is ready to go."
-      ctaLabel={busy ? 'Setting up…' : `Start my ${TRIAL_DAYS}-day free trial`}
-      ctaDisabled={busy}
-      onCta={startTrial}
-      footnote={
-        <Text style={styles.footnote}>
-          No charge today · We’ll remind you 1 day before it ends
-        </Text>
+    <PaywallShell
+      title="We want you to try Wakey for free."
+      assurance="No Payment Due Now"
+      ctaLabel={PRICING.trialCta}
+      onCta={() => router.push('/paywall-reminder')}
+      belowCta={
+        <>
+          <Text style={styles.subNote}>No commitment, cancel anytime.</Text>
+          <View style={styles.legalRow}>
+            {LEGAL.map((label, i) => (
+              <View key={label} style={styles.legalItem}>
+                {i > 0 && <Text style={styles.legalDot}>•</Text>}
+                <Pressable hitSlop={6}>
+                  <Text style={styles.legal}>{label}</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        </>
       }
     >
-      <View style={styles.card}>
-        {PLAN_ROWS.map((row, i) => (
-          <View key={row.title} style={[styles.row, i > 0 && styles.rowBorder]}>
-            <Text style={styles.tick}>✓</Text>
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{row.title}</Text>
-              <Text style={styles.rowSub}>{row.sub}</Text>
-            </View>
+      <View style={styles.frameWrap}>
+        <View style={[styles.frame, { width: frameW, height: frameH }]}>
+          <View style={styles.screen}>
+            <VideoView
+              player={player}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              nativeControls={false}
+            />
           </View>
-        ))}
-      </View>
-
-      {busy && (
-        <View style={styles.busyRow}>
-          <ActivityIndicator color={OB.accentDeep} />
-          <Text style={styles.busyText}>Building your first alarm…</Text>
+          <View style={styles.island} />
         </View>
-      )}
-
-      <View style={styles.legalRow}>
-        <Pressable hitSlop={8}>
-          <Text style={styles.legal}>Restore</Text>
-        </Pressable>
-        <Text style={styles.legalDot}>·</Text>
-        <Pressable hitSlop={8}>
-          <Text style={styles.legal}>Terms</Text>
-        </Pressable>
-        <Text style={styles.legalDot}>·</Text>
-        <Pressable hitSlop={8}>
-          <Text style={styles.legal}>Privacy</Text>
-        </Pressable>
       </View>
-
-      <Text style={styles.note}>Placeholder paywall — wire real billing later.</Text>
-    </OnboardingShell>
+    </PaywallShell>
   );
 }
 
 const styles = StyleSheet.create({
-  footnote: { fontFamily: OB.sans, fontSize: 12.5, color: OB.textDim, textAlign: 'center' },
-  card: {
-    backgroundColor: OB.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: OB.border,
-    paddingHorizontal: 18,
-    marginTop: 4,
+  frameWrap: { alignItems: 'center', marginTop: 28, marginBottom: 12 },
+  frame: {
+    backgroundColor: '#0D0D0F',
+    borderRadius: 42,
+    padding: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
   },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
-  rowBorder: { borderTopWidth: 1, borderTopColor: OB.border },
-  tick: { fontFamily: OB.sansBold, fontSize: 16, color: OB.accentDeep, width: 28 },
-  rowText: { flex: 1 },
-  rowTitle: { fontFamily: OB.sansSemi, fontSize: 16, color: OB.text },
-  rowSub: { fontFamily: OB.sans, fontSize: 13, color: OB.textDim, marginTop: 2 },
-  busyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 18 },
-  busyText: { fontFamily: OB.sansMed, fontSize: 13, color: OB.textDim },
-  legalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 22 },
-  legal: { fontFamily: OB.sansMed, fontSize: 12.5, color: OB.textDim },
-  legalDot: { color: OB.textFaint },
-  note: {
-    fontFamily: OB.mono,
-    fontSize: 10,
-    letterSpacing: 0.6,
-    color: OB.textFaint,
-    textAlign: 'center',
-    marginTop: 14,
+  screen: {
+    flex: 1,
+    borderRadius: 34,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
   },
+  island: {
+    position: 'absolute',
+    top: 18,
+    alignSelf: 'center',
+    width: 78,
+    height: 24,
+    borderRadius: 14,
+    backgroundColor: '#000',
+  },
+  subNote: { fontFamily: OB.sansMed, fontSize: 14.5, color: OB.text },
+  legalRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
+  legalItem: { flexDirection: 'row', alignItems: 'center' },
+  legal: { fontFamily: OB.sansMed, fontSize: 13, color: OB.textDim, textDecorationLine: 'underline' },
+  legalDot: { color: OB.textFaint, marginHorizontal: 8 },
 });
