@@ -16,6 +16,8 @@ export type OnboardingState = {
   /** Chosen wake time (24h). Prefills the user's first alarm. */
   wakeHour: number;
   wakeMinute: number;
+  /** Chosen challenge id (see CHALLENGE_MAPPING) for the first alarm. */
+  mission: string;
   /** Single-select answer ids. */
   mornings: string | null;
   /** Option id from the BACK_TO_SLEEP question. */
@@ -35,6 +37,7 @@ const DEFAULT_STATE: OnboardingState = {
   snooze: null,
   wakeHour: 7,
   wakeMinute: 0,
+  mission: 'math',
   mornings: null,
   backToSleep: null,
   hardest: null,

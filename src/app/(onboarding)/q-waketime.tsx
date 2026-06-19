@@ -42,7 +42,7 @@ export default function QWakeTime() {
       title="When do you want to be up?"
       subtitle="Not when you set an alarm and snooze — the time you actually want your feet on the floor."
       ctaLabel="Lock it in"
-      onCta={() => router.push('/q-mornings')}
+      onCta={() => router.push('/q-mission')}
     >
       <View style={styles.pickerWrap}>
         <View style={styles.band} pointerEvents="none" />

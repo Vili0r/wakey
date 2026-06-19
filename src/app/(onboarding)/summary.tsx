@@ -41,7 +41,7 @@ export default function Summary() {
       title="Wake up on time in 30 days."
       subtitle="Habits form with repetition. Win the morning daily for a month and getting up stops taking willpower at all."
       ctaLabel="I’m ready"
-      onCta={() => router.push('/trial-info')}
+      onCta={() => router.push('/commitment')}
     >
       <View style={styles.list}>
         {steps.map((s, i) => (

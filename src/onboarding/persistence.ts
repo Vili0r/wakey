@@ -58,6 +58,7 @@ export async function completeOnboarding(state: OnboardingState): Promise<void> 
           currentWake: state.currentWake,
           realMorning: state.realMorning,
           commitment: state.commitment,
+          mission: state.mission,
         },
         updatedAt: new Date(),
       })
@@ -77,7 +78,7 @@ async function seedFirstAlarm(state: OnboardingState): Promise<void> {
       minute: state.wakeMinute,
       label: 'Wake up',
       days: [1, 2, 3, 4, 5],
-      challenge: CHALLENGE_MAPPING.math,
+      challenge: CHALLENGE_MAPPING[state.mission] || CHALLENGE_MAPPING.math,
       enabled: true,
       difficulty: 'standard',
     });

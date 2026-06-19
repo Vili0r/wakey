@@ -1,82 +1,120 @@
 /**
- * Screen 19 — final social proof before the paywall. Ratings and quotes are
- * clearly marked placeholder data for this build; swap for real reviews later.
+ * Screen 19 — "Give us a rating". At this point the user has felt the loop and
+ * lit their first streak, so we surface social proof and ride the moment with
+ * the native StoreReview prompt (guarded by availability + a fired ref, fired
+ * once). Reviews are clearly marked placeholder data for this build.
  */
 
 import { OB, OnboardingShell } from '@/components/onboarding/onboarding-shell';
 import { router } from 'expo-router';
+import * as StoreReview from 'expo-store-review';
+import { useEffect, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, ReduceMotion } from 'react-native-reanimated';
 
-const QUOTES: { quote: string; who: string }[] = [
-  { quote: 'First alarm app I’ve never beaten by sleeping through it. I’m actually up now.', who: 'sample reviewer' },
-  { quote: 'The streak got me. Three weeks in and I haven’t snoozed once.', who: 'sample reviewer' },
-  { quote: 'Dragging the sun to commit sounds silly. It works on me every morning.', who: 'sample reviewer' },
+const REVIEWS: { name: string; initials: string; quote: string }[] = [
+  {
+    name: 'Georgia P.',
+    initials: 'GP',
+    quote:
+      'Three weeks in and I haven’t snoozed once. The streak is the most motivating thing I’ve ever had on my phone.',
+  },
 ];
 
 export default function SocialProof() {
+  const asked = useRef(false);
+
+  useEffect(() => {
+    if (asked.current) return;
+    asked.current = true;
+    // Let the screen settle, then ride the moment with the native prompt.
+    const t = setTimeout(async () => {
+      try {
+        if (await StoreReview.isAvailableAsync()) {
+          await StoreReview.requestReview();
+        }
+      } catch {
+        // Review prompt is non-essential; never block the flow on it.
+      }
+    }, 1200);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
     <OnboardingShell
       progress={0.98}
       showBack
-      eyebrow="PLACEHOLDER REVIEWS"
-      title="You’re in good company."
-      ctaLabel="See my plan"
-      onCta={() => router.push('/problem')}
+      title="Give us a rating"
+      ctaLabel="Continue"
+      onCta={() => router.push('/setup')}
+      footnote={
+        <Animated.View
+          entering={FadeInDown.delay(120)
+            .duration(440)
+            .reduceMotion(ReduceMotion.System)}
+          style={[styles.card, { alignSelf: 'stretch', marginBottom: 24 }]}
+        >
+          <View style={styles.cardHead}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{REVIEWS[0].initials}</Text>
+            </View>
+            <Text style={styles.name}>{REVIEWS[0].name}</Text>
+            <Text style={styles.cardStars}>★★★★★</Text>
+          </View>
+          <Text style={styles.quote}>{REVIEWS[0].quote}</Text>
+        </Animated.View>
+      }
     >
-      <View style={styles.ratingRow}>
-        <Text style={styles.ratingNum}>4.8</Text>
-        <View>
+      <View style={styles.hero}>
+        <View style={styles.laurelRow}>
+          <Text style={[styles.laurel, styles.laurelLeft]}>🌿</Text>
           <Text style={styles.stars}>★★★★★</Text>
-          <Text style={styles.ratingSub}>sample rating · placeholder data</Text>
+          <Text style={styles.laurel}>🌿</Text>
         </View>
+        <Text style={styles.heroTitle}>Wakey was made to{'\n'}build morning routines</Text>
       </View>
-
-      <View style={styles.quotes}>
-        {QUOTES.map((q, i) => (
-          <Animated.View
-            key={i}
-            entering={FadeInDown.delay(140 + i * 110)
-              .duration(440)
-              .reduceMotion(ReduceMotion.System)}
-            style={styles.quoteCard}
-          >
-            <Text style={styles.stars}>★★★★★</Text>
-            <Text style={styles.quoteText}>“{q.quote}”</Text>
-            <Text style={styles.quoteWho}>— {q.who}</Text>
-          </Animated.View>
-        ))}
-      </View>
-
-      <Text style={styles.note}>Reviews shown are sample content for this build.</Text>
     </OnboardingShell>
   );
 }
 
+const GOLD = '#F5A623';
+
 const styles = StyleSheet.create({
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
+  hero: { alignItems: 'center', marginTop: 8, marginBottom: 24 },
+  laurelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  laurel: { fontSize: 34 },
+  laurelLeft: { transform: [{ scaleX: -1 }] },
+  stars: { fontSize: 30, color: GOLD, letterSpacing: 2 },
+  heroTitle: {
+    fontFamily: OB.sansBold,
+    fontSize: 24,
+    lineHeight: 30,
+    color: OB.text,
+    textAlign: 'center',
+    marginTop: 18,
+  },
+  list: { gap: 14 },
+  card: {
     backgroundColor: OB.surface,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: OB.border,
-    padding: 20,
-  },
-  ratingNum: { fontFamily: OB.serif, fontSize: 56, color: OB.accentDeep, lineHeight: 58 },
-  stars: { fontSize: 15, color: OB.accent, letterSpacing: 2 },
-  ratingSub: { fontFamily: OB.sans, fontSize: 12, color: OB.textDim, marginTop: 4 },
-  quotes: { gap: 12, marginTop: 16 },
-  quoteCard: {
-    backgroundColor: OB.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: OB.border,
     padding: 18,
   },
-  quoteText: { fontFamily: OB.sansMed, fontSize: 14.5, lineHeight: 21, color: OB.text, marginTop: 8 },
-  quoteWho: { fontFamily: OB.sans, fontSize: 12, color: OB.textFaint, marginTop: 8 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: OB.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: { fontFamily: OB.sansBold, fontSize: 14, color: OB.accentDeep },
+  name: { flex: 1, fontFamily: OB.sansBold, fontSize: 16, color: OB.text },
+  cardStars: { fontSize: 14, color: GOLD, letterSpacing: 1.5 },
+  quote: { fontFamily: OB.sans, fontSize: 14.5, lineHeight: 21, color: OB.textDim },
   note: {
     fontFamily: OB.mono,
     fontSize: 10,

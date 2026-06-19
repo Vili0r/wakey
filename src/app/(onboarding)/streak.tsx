@@ -1,36 +1,15 @@
 /**
  * Screen 15 (climax payoff) — Day 1 streak. Beating the demo just lit the first
- * day, so we celebrate it and, at this emotional high, ask for a review via the
- * native StoreReview prompt. Timed here on purpose: never before the win, and
- * only once (guarded by availability + a fired ref).
+ * day, so we celebrate it before moving on. (The native review prompt lives on
+ * the social-proof screen, not here.)
  */
 
 import { OB, OnboardingShell } from '@/components/onboarding/onboarding-shell';
 import { StreakReveal } from '@/components/onboarding/streak-reveal';
 import { router } from 'expo-router';
-import * as StoreReview from 'expo-store-review';
-import { useEffect, useRef } from 'react';
 import { StyleSheet, Text } from 'react-native';
 
 export default function Streak() {
-  const asked = useRef(false);
-
-  useEffect(() => {
-    if (asked.current) return;
-    asked.current = true;
-    // Fire slightly after the reveal settles so the prompt rides the high.
-    const t = setTimeout(async () => {
-      try {
-        if (await StoreReview.isAvailableAsync()) {
-          await StoreReview.requestReview();
-        }
-      } catch {
-        // Review prompt is non-essential; never block the flow on it.
-      }
-    }, 1400);
-    return () => clearTimeout(t);
-  }, []);
-
   return (
     <OnboardingShell
       progress={0.9}

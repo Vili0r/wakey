@@ -158,7 +158,7 @@ export default function Commitment() {
           </Animated.View>
         </GestureDetector>
 
-        <Animated.Text style={[styles.dragHint, hintStyle]}>drag up ↑</Animated.Text>
+        <Animated.Text style={[styles.dragHint, hintStyle]}>drag up to ↑</Animated.Text>
       </View>
 
       <View style={styles.footer}>
@@ -166,7 +166,7 @@ export default function Commitment() {
           <OnboardingButton label="I’m committed" onPress={() => router.push('/social-proof')} />
         ) : (
           <Pressable onPress={completeViaButton} hitSlop={8} style={styles.altBtn}>
-            <Text style={styles.altText}>Or tap here to commit</Text>
+            <Text style={styles.altText}>Lock in my commitment</Text>
           </Pressable>
         )}
       </View>
@@ -260,5 +260,5 @@ const styles = StyleSheet.create({
   },
   footer: { paddingTop: 8, minHeight: 70, justifyContent: 'center' },
   altBtn: { alignSelf: 'center', paddingVertical: 14 },
-  altText: { fontFamily: OB.sansMed, fontSize: 13.5, color: OB.textFaint, letterSpacing: 0.3 },
+  altText: { fontFamily: OB.mono, fontSize: 15, color: OB.textFaint, letterSpacing: 0.3 },
 });
