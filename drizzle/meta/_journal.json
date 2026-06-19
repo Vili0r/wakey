@@ -8,6 +8,13 @@
       "when": 1781283957967,
       "tag": "0000_natural_morlocks",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1781813598041,
+      "tag": "0001_bizarre_invaders",
+      "breakpoints": true
     }
   ]
 }

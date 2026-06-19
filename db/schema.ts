@@ -202,6 +202,20 @@ export const settings = sqliteTable('settings', {
   // Volume 0–1 for the alarm tone.
   volume: real('volume').notNull().default(1),
 
+  // ── Onboarding ──────────────────────────────────────────────────
+  // Once true, the app skips onboarding forever (gated in app/index).
+  onboardingComplete: integer('onboarding_complete', { mode: 'boolean' })
+    .notNull()
+    .default(false),
+  // The wake time the user chose during onboarding (24h). Used to
+  // prefill their very first alarm. Null until they finish onboarding.
+  wakeHour: integer('wake_hour'),
+  wakeMinute: integer('wake_minute'),
+  // Raw answers captured during onboarding, kept for personalization /
+  // future analytics. Shape mirrors OnboardingState in @/onboarding/state.
+  onboardingAnswers: text('onboarding_answers', { mode: 'json' })
+    .$type<Record<string, unknown>>(),
+
   updatedAt,
 });
 
