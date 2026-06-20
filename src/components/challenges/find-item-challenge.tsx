@@ -20,7 +20,7 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
-import { useSharedValue } from 'react-native-reanimated';
+import Animated, { useSharedValue, FadeIn, ZoomIn } from 'react-native-reanimated';
 import {
   useFrameOutput,
   type Frame,
@@ -31,37 +31,17 @@ import { useObjectDetection, YOLO26N } from 'react-native-executorch';
 import CameraChallenge from './camera-challenge';
 import { SFIcon } from '@/components/SF-icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  FIND_ITEM_GRID as GRID_ITEMS,
+  resolveFindItemIds,
+  type FindItemGridItem as GridItem,
+} from '@/constants/find-item-items';
+import FindItemPicker from '@/components/find-item-picker';
 
 type Bbox = { x1: number; y1: number; x2: number; y2: number };
 type Detection = { bbox: Bbox; label: string; score: number };
 
-type GridItem = {
-  id: string;
-  name: string;
-  emoji: string;
-  cocoLabel: string;
-};
-
-// 15 items mapping to standard COCO dataset classes
-const GRID_ITEMS: GridItem[] = [
-  { id: 'keyboard', name: 'Keyboard', emoji: '⌨️', cocoLabel: 'keyboard' },
-  { id: 'book', name: 'Book', emoji: '📖', cocoLabel: 'book' },
-  { id: 'laptop', name: 'Laptop', emoji: '💻', cocoLabel: 'laptop' },
-  { id: 'toilet', name: 'Toilet', emoji: '🚽', cocoLabel: 'toilet' },
-  { id: 'dog', name: 'Dog', emoji: '🐕', cocoLabel: 'dog' },
-  { id: 'cat', name: 'Cat', emoji: '🐈', cocoLabel: 'cat' },
-  { id: 'backpack', name: 'Backpack', emoji: '🎒', cocoLabel: 'backpack' },
-  { id: 'bottle', name: 'Bottle', emoji: '🍼', cocoLabel: 'bottle' },
-  { id: 'refrigerator', name: 'Fridge', emoji: '🧊', cocoLabel: 'refrigerator' },
-  { id: 'cup', name: 'Cup', emoji: '☕', cocoLabel: 'cup' },
-  { id: 'plant', name: 'Plant', emoji: '🪴', cocoLabel: 'potted plant' },
-  { id: 'phone', name: 'Phone', emoji: '📱', cocoLabel: 'cell phone' },
-  { id: 'remote', name: 'Remote', emoji: '📺', cocoLabel: 'remote' },
-  { id: 'clock', name: 'Clock', emoji: '⏰', cocoLabel: 'clock' },
-  { id: 'chair', name: 'Chair', emoji: '🪑', cocoLabel: 'chair' },
-];
-
-const DETECTION_THRESHOLD = 0.6;
+const DETECTION_THRESHOLD = 0.45;
 const HOLD_MS = 800; // continuous time the target must stay detected
 
 type Step = 'select-items' | 'transition' | 'preview-item' | 'scan-item';
@@ -69,7 +49,17 @@ type Step = 'select-items' | 'transition' | 'preview-item' | 'scan-item';
 export default function FindItemChallenge({
   onComplete,
   onAbort,
-}: Pick<ChallengeProps, 'onComplete' | 'onAbort'> & Partial<ChallengeProps>) {
+  itemIds,
+}: Pick<ChallengeProps, 'onComplete' | 'onAbort'> &
+  Partial<ChallengeProps> & {
+    /**
+     * Items the user pre-selected when creating the alarm. When provided, the
+     * in-challenge item-selection step is skipped and we go straight to the
+     * target preview (with reroll to change the item). Omitted for the legacy
+     * in-challenge selection flow (e.g. the 'scan' alias).
+     */
+    itemIds?: string[] | null;
+  }) {
   const isDark = useColorScheme() !== 'light';
   const theme = isDark ? THEMES.dark : THEMES.light;
   const insets = useSafeAreaInsets();
@@ -78,11 +68,22 @@ export default function FindItemChallenge({
   // Model loading starts warming up immediately on mount
   const model = useObjectDetection({ model: YOLO26N });
 
-  const [step, setStep] = useState<Step>('select-items');
-  const [selectedIds, setSelectedIds] = useState<string[]>(() =>
-    GRID_ITEMS.map((item) => item.id),
+  // When the alarm carries a pre-selected item set, skip selection and drop the
+  // user straight onto the target preview where they can reroll to change it.
+  const fromAlarm = Array.isArray(itemIds) && itemIds.length > 0;
+  const presetIds = useMemo(
+    () => (fromAlarm ? resolveFindItemIds(itemIds) : GRID_ITEMS.map((i) => i.id)),
+    [fromAlarm, itemIds],
   );
-  const [targetItem, setTargetItem] = useState<GridItem | null>(null);
+
+  const [step, setStep] = useState<Step>(fromAlarm ? 'preview-item' : 'select-items');
+  const [selectedIds, setSelectedIds] = useState<string[]>(presetIds);
+  const [targetItem, setTargetItem] = useState<GridItem | null>(() => {
+    if (!fromAlarm) return null;
+    const pool = GRID_ITEMS.filter((item) => presetIds.includes(item.id));
+    return pool[Math.floor(Math.random() * pool.length)] ?? null;
+  });
+  const [pickerVisible, setPickerVisible] = useState(false);
 
   // Camera settings states
   const [torchState, setTorchState] = useState<'off' | 'on'>('off');
@@ -93,6 +94,7 @@ export default function FindItemChallenge({
   const [box, setBox] = useState<Bbox | null>(null);
   const [locked, setLocked] = useState(false);
   const [isActive, setIsActive] = useState(true);
+  const [succeeded, setSucceeded] = useState(false);
 
   const targetItemRef = useRef(targetItem);
   useEffect(() => {
@@ -100,24 +102,30 @@ export default function FindItemChallenge({
   }, [targetItem]);
 
   const holdSince = useRef<number | null>(null);
+  const successTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attempts = useRef(1);
   const startedAt = useRef(0);
   useEffect(() => {
     startedAt.current = Date.now();
   }, []);
   const done = useRef(false);
+  const lastSeenTime = useRef<number>(0);
 
   const finish = useCallback(() => {
     if (done.current) return;
     done.current = true;
     setIsActive(false);
+    setSucceeded(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const result: ChallengeResult = {
       completed: true,
       attempts: attempts.current,
       durationMs: Date.now() - startedAt.current,
     };
-    onComplete?.(result);
+    // Linger on the success confirmation for a beat before redirecting.
+    successTimeout.current = setTimeout(() => {
+      onComplete?.(result);
+    }, 1800);
   }, [onComplete]);
 
   const onDetections = useCallback(
@@ -127,7 +135,11 @@ export default function FindItemChallenge({
       if (!currentTarget) return;
 
       const match = detections
-        .filter((d) => d.label === currentTarget.cocoLabel && d.score >= DETECTION_THRESHOLD)
+        .filter(
+          (d) =>
+            [currentTarget.cocoLabel, ...(currentTarget.cocoAliases || [])].includes(d.label) &&
+            d.score >= DETECTION_THRESHOLD
+        )
         .sort((a, b) => b.score - a.score)[0];
 
       if (!match) {
@@ -137,6 +149,7 @@ export default function FindItemChallenge({
         return;
       }
 
+      lastSeenTime.current = Date.now();
       setBox(match.bbox);
       const now = Date.now();
       holdSince.current ??= now;
@@ -179,17 +192,12 @@ export default function FindItemChallenge({
 
   const rerollObject = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const pool = GRID_ITEMS.filter(
-      (item) => selectedIds.includes(item.id) && item.id !== targetItem?.id,
-    );
-    const nextItem =
-      pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : targetItem;
-    if (nextItem) setTargetItem(nextItem);
+    setPickerVisible(true);
   };
 
   const handleShutterPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (box !== null || locked) {
+    if (box !== null || locked || (Date.now() - lastSeenTime.current < 1500)) {
       finish();
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -210,14 +218,16 @@ export default function FindItemChallenge({
     onFrame: useCallback(
       (frame: Frame) => {
         'worklet';
+        // Dispose the frame exactly once. The previous version disposed in both
+        // the early-return branches and the finally block, which double-disposed
+        // the underlying HybridObject and threw "cannot call HybridObject.dispose",
+        // killing the detection pipeline entirely.
         try {
           if (!isActive || step !== 'scan-item') {
-            frame.dispose();
             return;
           }
           frameCount.value = (frameCount.value + 1) % 3;
           if (frameCount.value !== 0) {
-            frame.dispose();
             return;
           }
 
@@ -237,6 +247,7 @@ export default function FindItemChallenge({
       // @ts-expect-error — release/unload exists on the module; name may vary by version
       model.release?.();
       if (errorTimeout.current) clearTimeout(errorTimeout.current);
+      if (successTimeout.current) clearTimeout(successTimeout.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -350,21 +361,18 @@ export default function FindItemChallenge({
     );
   }
 
-  // ---- 3. Preview Item Screen ----
   if (step === 'preview-item') {
     return (
       <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
-        <View style={styles.progressBarWrapper}>
-          <ProgressBar pct="85%" />
-        </View>
-
-        <Pressable
-          onPress={() => setStep('select-items')}
-          style={[styles.backButton, { top: insets.top + 20 }]}
-          hitSlop={12}
-        >
-          <SFIcon name="chevron.left" size={24} color={theme.text} />
-        </Pressable>
+        {!fromAlarm && (
+          <Pressable
+            onPress={() => setStep('select-items')}
+            style={[styles.backButton, { top: insets.top + 20 }]}
+            hitSlop={12}
+          >
+            <SFIcon name="chevron.left" size={24} color={theme.text} />
+          </Pressable>
+        )}
 
         <View style={styles.centeredContent}>
           <Text style={styles.objectPreviewLabel}>YOUR OBJECT</Text>
@@ -387,6 +395,29 @@ export default function FindItemChallenge({
             </Text>
           </Pressable>
         </View>
+
+        <FindItemPicker
+          visible={pickerVisible}
+          selectedIds={selectedIds}
+          onChange={setSelectedIds}
+          onClose={() => {
+            setPickerVisible(false);
+            const pool = GRID_ITEMS.filter((item) => selectedIds.includes(item.id));
+            if (pool.length > 0 && (!targetItem || !selectedIds.includes(targetItem.id))) {
+              setTargetItem(pool[Math.floor(Math.random() * pool.length)] ?? null);
+            }
+          }}
+          theme={{
+            bg: theme.bg,
+            surface: theme.surface,
+            surfaceBorder: theme.surfaceBorder,
+            text: theme.text,
+            textFaint: theme.textDim,
+            accent: theme.accent,
+            chipBg: isDark ? '#1F223B' : '#E5E8F0',
+            fabText: theme.name === 'light' ? '#FFF' : '#111',
+          }}
+        />
       </View>
     );
   }
@@ -406,13 +437,25 @@ export default function FindItemChallenge({
         torch={torchState}
         zoom={isZoomed ? 2 : 1}
       >
-        {/* Back Button */}
+        {/* Success confirmation overlay — shown briefly before redirecting */}
+        {succeeded ? (
+          <Animated.View entering={FadeIn.duration(250)} style={styles.successOverlay}>
+            <Animated.View entering={ZoomIn.springify().damping(12)} style={styles.successCircle}>
+              <SFIcon name="checkmark" size={56} color="#FFFFFF" weight="bold" />
+            </Animated.View>
+            <Text style={styles.successTitle}>Found it!</Text>
+            <Text style={styles.successSubtitle}>{targetItem?.name} detected</Text>
+          </Animated.View>
+        ) : null}
+
+        {/* Change Item Button */}
         <Pressable
           onPress={() => setStep('preview-item')}
-          style={[styles.cameraCircleBtn, { position: 'absolute', top: insets.top + 20, left: 20 }]}
+          style={[styles.changeItemBtn, { top: insets.top + 20, left: 20 }]}
           hitSlop={12}
         >
-          <SFIcon name="chevron.left" size={20} color="#FFFFFF" weight="bold" />
+          <SFIcon name="chevron.left" size={16} color="#FFFFFF" weight="bold" />
+          <Text style={styles.changeItemText}>Change Item</Text>
         </Pressable>
 
         {/* Live bounding box overlay from Executorch */}
@@ -447,10 +490,10 @@ export default function FindItemChallenge({
         </View>
 
         {/* Feedback Hint Toast */}
-        {(cameraErrorText || locked || box) ? (
+        {!succeeded ? (
           <View style={styles.toastContainer} pointerEvents="none">
             <Text style={styles.toastText}>
-              {cameraErrorText || (locked ? "Hold steady…" : `Keep looking for a ${targetItem?.name}…`)}
+              {cameraErrorText || (box ? "Hold steady…" : `Point camera at a ${targetItem?.name}`)}
             </Text>
           </View>
         ) : null}
@@ -646,6 +689,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  changeItemBtn: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    gap: 6,
+  },
+  changeItemText: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
   bracketsContainer: {
     position: 'absolute',
     top: '25%',
@@ -753,6 +811,33 @@ const styles = StyleSheet.create({
     fontFamily: 'Sora_600SemiBold',
     fontSize: 14,
     color: '#FFFFFF',
+  },
+  successOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    zIndex: 50,
+  },
+  successCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#34C759',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 8px 24px rgba(52, 199, 89, 0.4)',
+  },
+  successTitle: {
+    fontFamily: 'InstrumentSerif_400Regular_Italic',
+    fontSize: 40,
+    color: '#FFFFFF',
+  },
+  successSubtitle: {
+    fontFamily: 'Sora_500Medium',
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.7)',
   },
   skipButton: {
     position: 'absolute',

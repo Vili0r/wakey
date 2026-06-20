@@ -352,7 +352,7 @@ function ChallengeView({
       return <PushupsChallenge {...common} />;
     case 'scan':
     case 'find-item':
-      return <FindItemChallenge onComplete={onComplete} onAbort={onAbort} />;
+      return <FindItemChallenge onComplete={onComplete} onAbort={onAbort} itemIds={alarm.findItemIds} />;
     case 'photo':
       return <PhotoChallenge {...common} />;
     case 'bed':

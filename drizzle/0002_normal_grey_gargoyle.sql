@@ -1,0 +1,1 @@
+ALTER TABLE `alarms` ADD `find_item_ids` text;

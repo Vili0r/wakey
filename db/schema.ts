@@ -68,6 +68,10 @@ export const alarms = sqliteTable(
       .notNull()
       .default('standard'),
 
+    // For the 'find-item' challenge: which items the user has at home, as a
+    // JSON array of FIND_ITEM_GRID ids. Null/empty falls back to all items.
+    findItemIds: text('find_item_ids', { mode: 'json' }).$type<string[]>(),
+
     // Per-alarm overrides (fall back to settings when null).
     soundId: text('sound_id'),
     vibrate: integer('vibrate', { mode: 'boolean' }).notNull().default(true),

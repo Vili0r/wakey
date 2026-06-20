@@ -22,6 +22,7 @@ type PendingAlarmData = {
   challenge: string;
   difficulty: 'gentle' | 'standard' | 'brutal';
   soundId?: string | null;
+  findItemIds?: string[] | null;
 };
 
 const pendingFile = new File(Paths.document, 'pending_alarm.json');
@@ -131,6 +132,9 @@ export type Alarm = {
   isOneTime?: boolean; // true for one-time alarms (no repeat days)
   difficulty: Difficulty;
   soundId?: string | null; // null → fall back to the default tone
+  // For the 'find-item' challenge: which items the user has at home (catalogue
+  // ids). Null/empty → all items are eligible. Ignored by other challenges.
+  findItemIds?: string[] | null;
 };
 
 export const INITIAL_ALARMS: Alarm[] = [
@@ -420,6 +424,13 @@ export function mapDbToUiAlarm(dbAlarm: any): Alarm {
     parsedDays = [];
   }
 
+  let parsedFindItemIds = dbAlarm.findItemIds;
+  if (typeof parsedFindItemIds === 'string') {
+    try { parsedFindItemIds = JSON.parse(parsedFindItemIds); }
+    catch { parsedFindItemIds = null; }
+  }
+  if (!Array.isArray(parsedFindItemIds)) parsedFindItemIds = null;
+
   return {
     id: String(dbAlarm.id),
     hour: dbAlarm.hour,
@@ -431,6 +442,7 @@ export function mapDbToUiAlarm(dbAlarm: any): Alarm {
     isOneTime: !parsedDays || parsedDays.length === 0,
     difficulty: (dbAlarm.difficulty as Difficulty) || 'standard',
     soundId: dbAlarm.soundId ?? null,
+    findItemIds: parsedFindItemIds,
   };
 }
 
@@ -550,6 +562,7 @@ export const alarmStore = {
       challenge: challengeId,
       difficulty: alarmData.difficulty || 'standard',
       soundId: alarmData.soundId ?? null,
+      findItemIds: alarmData.findItemIds ?? null,
       enabled: true,
     }).returning();
 
@@ -586,6 +599,7 @@ export const alarmStore = {
           challenge: challengeId,
           difficulty: alarmData.difficulty || 'standard',
           soundId: alarmData.soundId ?? null,
+          findItemIds: alarmData.findItemIds ?? null,
           enabled: true, // Auto-enable on edit
         })
         .where(eq(alarmsTable.id, numericId));

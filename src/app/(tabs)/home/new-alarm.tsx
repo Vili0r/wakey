@@ -2,6 +2,8 @@ import DayPill from '@/components/day-pill';
 import Segmented from '@/components/segmented';
 import SFIcon from '@/components/SF-icon';
 import SoundPicker from '@/components/sound-picker';
+import FindItemPicker from '@/components/find-item-picker';
+import { ALL_FIND_ITEM_IDS, resolveFindItemIds } from '@/constants/find-item-items';
 import { DEFAULT_SOUND_ID, getAlarmSound } from '@/utils/alarm-sounds';
 import { getDefaultSoundId } from '@/utils/settings-store';
 import Wheel, { ITEM_H, WHEEL_PAD } from '@/components/wheel';
@@ -48,6 +50,7 @@ export type NewAlarm = {
   challengeId: string;
   difficulty: 'gentle' | 'standard' | 'brutal';
   soundId: string;
+  findItemIds?: string[] | null;
 };
 
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -194,6 +197,20 @@ function AlarmForm({
   const soundTouched = useRef(false);
   const [now, setNow] = useState(() => new Date());
 
+  const [findItemIds, setFindItemIds] = useState<string[]>(() => {
+    if (editAlarm) return resolveFindItemIds(editAlarm.findItemIds);
+    return ALL_FIND_ITEM_IDS;
+  });
+  const [findItemPickerOpen, setFindItemPickerOpen] = useState(false);
+
+  const prevChallengeId = useRef(challengeId);
+  useEffect(() => {
+    if (challengeId === 'find-item' && prevChallengeId.current !== 'find-item') {
+      setFindItemPickerOpen(true);
+    }
+    prevChallengeId.current = challengeId;
+  }, [challengeId]);
+
   // New alarms inherit the user's default sound from settings — but don't clobber
   // a pick the user already made before this async load resolved.
   useEffect(() => {
@@ -266,6 +283,7 @@ function AlarmForm({
         challengeId,
         difficulty,
         soundId,
+        findItemIds,
       });
     } else {
       if (isEdit && params.id) {
@@ -277,6 +295,7 @@ function AlarmForm({
           challenge: mappedChallenge,
           difficulty,
           soundId,
+          findItemIds,
           enabled: true,
         });
       } else {
@@ -288,6 +307,7 @@ function AlarmForm({
           challenge: mappedChallenge,
           difficulty,
           soundId,
+          findItemIds,
           enabled: true,
         });
       }
@@ -448,6 +468,39 @@ function AlarmForm({
           </Pressable>
         </Animated.View>
 
+        {/* Find Item config */}
+        {challengeId === 'find-item' && (
+          <Animated.View entering={FadeInDown.delay(280).springify().damping(126)}>
+            <Text style={[styles.sectionLabel, { color: theme.textFaint }]}>
+              ITEMS AT HOME
+            </Text>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setFindItemPickerOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.challengeSelector,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.surfaceBorder,
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+            >
+              <View style={styles.challengeSelectorLeft}>
+                <SFIcon name="checklist" size={20} color={theme.accent} />
+                <Text style={[styles.challengeSelectorName, { color: theme.text }]}>
+                  {findItemIds.length === ALL_FIND_ITEM_IDS.length
+                    ? 'All items'
+                    : `${findItemIds.length} item${findItemIds.length === 1 ? '' : 's'} selected`}
+                </Text>
+              </View>
+              <Text style={[styles.chevron, { color: theme.textFaint }]}>→</Text>
+            </Pressable>
+          </Animated.View>
+        )}
+
         {/* Difficulty */}
         <Animated.View
           entering={FadeInDown.delay(300).springify().damping(126)}
@@ -536,6 +589,14 @@ function AlarmForm({
         selectedId={soundId}
         onSelect={pickSound}
         onClose={() => setSoundPickerOpen(false)}
+        theme={theme}
+      />
+
+      <FindItemPicker
+        visible={findItemPickerOpen}
+        selectedIds={findItemIds}
+        onChange={setFindItemIds}
+        onClose={() => setFindItemPickerOpen(false)}
         theme={theme}
       />
     </View>

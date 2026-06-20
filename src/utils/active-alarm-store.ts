@@ -16,6 +16,7 @@ export type ActiveAlarm = {
   challenge: string; // 'squats' | 'pushups' | 'scan' | 'math' | ...
   difficulty: 'gentle' | 'standard' | 'brutal';
   soundId?: string | null; // which tone to ring; null → default tone
+  findItemIds?: string[] | null;
 };
 
 let activeAlarm: ActiveAlarm | null = null;

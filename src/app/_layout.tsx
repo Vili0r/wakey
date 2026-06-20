@@ -125,6 +125,7 @@ export default function RootLayout() {
           let challenge: string = 'math';
           let difficulty: ActiveAlarm['difficulty'] = 'standard';
           let soundId: string | null = null;
+          let findItemIds: string[] | null = null;
 
           if (numericId === null) {
             // The dismiss payload's id isn't in our reversible scheme, so we
@@ -146,6 +147,16 @@ export default function RootLayout() {
               // Per-alarm sound is an override; when unset, fall back to the
               // user's default sound from Settings (not the registry default).
               soundId = dbAlarm.soundId ?? (await getDefaultSoundId());
+              
+              let parsedFindItemIds = dbAlarm.findItemIds;
+              if (typeof parsedFindItemIds === 'string') {
+                try {
+                  parsedFindItemIds = JSON.parse(parsedFindItemIds);
+                } catch {
+                  parsedFindItemIds = null;
+                }
+              }
+              findItemIds = Array.isArray(parsedFindItemIds) ? parsedFindItemIds : null;
             } else {
               console.warn(
                 '[handleAlarmPayload] No alarm row for dbId',
@@ -162,6 +173,7 @@ export default function RootLayout() {
             challenge,
             difficulty,
             soundId,
+            findItemIds,
           });
         } catch (err) {
           console.error('Error handling alarm payload:', err);
@@ -192,6 +204,7 @@ export default function RootLayout() {
             challenge: pending.challenge,
             difficulty: pending.difficulty as ActiveAlarm['difficulty'],
             soundId: pending.soundId ?? null,
+            findItemIds: pending.findItemIds ?? null,
           });
         }
       } catch (err) {
@@ -230,6 +243,7 @@ export default function RootLayout() {
                 challenge: pending.challenge,
                 difficulty: pending.difficulty as ActiveAlarm['difficulty'],
                 soundId: pending.soundId ?? null,
+                findItemIds: pending.findItemIds ?? null,
               });
             }
           } catch {}
