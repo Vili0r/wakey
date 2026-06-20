@@ -34,7 +34,7 @@ import Animated, {
   withTiming
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, Line, LinearGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, ClipPath, Defs, G, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
@@ -93,6 +93,18 @@ export type InsightsData = {
   heatmap: number[];
   // Per challenge performance.
   challenges: { glyph: string; name: string; beaten: number; total: number }[];
+
+  // ── Time to rise: alarm → challenge beaten (includes snooze time). One
+  // averaged point per bucket across the selected period, so the trend is
+  // visible. `ms` is null for buckets with no beaten alarm.
+  timeToRise: { label: string; ms: number | null }[];
+  avgRiseMs: number; //   period average, alarm → up
+  fastestMs: number | null; // best (quickest) in the period
+  trendPct: number | null; // last vs first bucket; negative = getting faster
+  insight: string; //     one-line takeaway for the period
+  periodBeatenCount: number; // alarms beaten within the period
+  periodWord: string; //  'week' | 'month' | 'year'
+  periodTag: string; //   'WEEK' | 'MONTH' | 'YEAR'
 };
 
 export const DEFAULT_DATA: InsightsData = {
@@ -125,6 +137,22 @@ export const DEFAULT_DATA: InsightsData = {
     { glyph: '◫', name: 'Pattern', beaten: 5, total: 8 },
     { glyph: '∴', name: 'Steps', beaten: 2, total: 2 },
   ],
+  timeToRise: [
+    { label: 'M', ms: 95000 },
+    { label: 'T', ms: 88000 },
+    { label: 'W', ms: 132000 },
+    { label: 'T', ms: 74000 },
+    { label: 'F', ms: 61000 },
+    { label: 'S', ms: 540000 },
+    { label: 'S', ms: null },
+  ],
+  avgRiseMs: 165000,
+  fastestMs: 61000,
+  trendPct: -18,
+  insight: "You're rising 18% faster than the start of the week.",
+  periodBeatenCount: 6,
+  periodWord: 'week',
+  periodTag: 'WEEK',
 };
 
 /* ------------------------------------------------------------------ */
@@ -137,6 +165,16 @@ function fmtClock(minutes: number) {
   const period = h >= 12 ? 'PM' : 'AM';
   const hh = h % 12 === 0 ? 12 : h % 12;
   return `${hh}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+/** Human duration: "47s", "1m 23s", "12m". */
+function fmtDuration(ms: number) {
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m === 0) return `${s}s`;
+  if (s === 0) return `${m}m`;
+  return `${m}m ${String(s).padStart(2, '0')}s`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -274,19 +312,27 @@ function RhythmChart({
         })}
       </Svg>
 
-      {/* Day labels */}
-      <View style={[styles.rhythmLabels, { width }]}>
-        {data.map((d, i) => (
-          <Text
-            key={i}
-            style={[
-              styles.rhythmLabel,
-              { color: d.minutes == null ? theme.textFaint : theme.textDim, width: barW },
-            ]}
-          >
-            {d.label}
-          </Text>
-        ))}
+      {/* Day labels — aligned to each bar's centre */}
+      <View style={[styles.axisLabels, { width }]}>
+        {data.map((d, i) => {
+          const colW = 24;
+          const center = gap + i * (barW + gap) + barW / 2;
+          return (
+            <Text
+              key={i}
+              style={[
+                styles.axisLabel,
+                {
+                  color: d.minutes == null ? theme.textFaint : theme.textDim,
+                  width: colW,
+                  left: center - colW / 2,
+                },
+              ]}
+            >
+              {d.label}
+            </Text>
+          );
+        })}
       </View>
 
       {avg != null && (
@@ -297,6 +343,142 @@ function RhythmChart({
           </Text>
         </View>
       )}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Time-to-rise trend (line + area)                                    */
+/* ------------------------------------------------------------------ */
+
+function TrendChart({
+  data,
+  theme,
+  width,
+}: {
+  data: InsightsData['timeToRise'];
+  theme: Theme;
+  width: number;
+}) {
+  const H = 132;
+  const topPad = 16;
+  const bottomPad = 24;
+  const sidePad = 6;
+  const usableH = H - topPad - bottomPad;
+  const usableW = width - sidePad * 2;
+
+  const present = data
+    .map((d, i) => ({ ms: d.ms, i }))
+    .filter((d): d is { ms: number; i: number } => d.ms != null);
+
+  const values = present.map((d) => d.ms);
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 1;
+  const span = Math.max(max - min, 1);
+  const n = data.length;
+
+  const xFor = (i: number) =>
+    sidePad + (n === 1 ? usableW / 2 : (i / (n - 1)) * usableW);
+  const yFor = (ms: number) => topPad + (1 - (ms - min) / span) * usableH;
+
+  const pts = present.map((d) => ({ x: xFor(d.i), y: yFor(d.ms), ms: d.ms }));
+  const linePath = pts
+    .map((p, idx) => `${idx === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+    .join(' ');
+  const baseline = H - bottomPad;
+  const areaPath =
+    pts.length > 1
+      ? `${linePath} L${pts[pts.length - 1].x.toFixed(1)} ${baseline} L${pts[0].x.toFixed(1)} ${baseline} Z`
+      : '';
+
+  // Left-to-right reveal animation. Re-runs whenever the series changes.
+  const p = useSharedValue(0);
+  useEffect(() => {
+    p.value = 0;
+    p.value = withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) });
+  }, [p, linePath]);
+  const clipProps = useAnimatedProps(() => ({
+    width: Math.max(usableW * p.value + sidePad, 0.001),
+  }));
+
+  if (present.length === 0) {
+    return (
+      <View style={{ height: H, alignItems: 'center', justifyContent: 'center' }}>
+        <Text
+          style={{
+            fontFamily: 'Sora_400Regular',
+            fontSize: 12.5,
+            color: theme.textFaint,
+          }}
+        >
+          No mornings logged yet
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <Svg width={width} height={H}>
+        <Defs>
+          <LinearGradient id="trendArea" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={theme.accent} stopOpacity={0.28} />
+            <Stop offset="100%" stopColor={theme.accent} stopOpacity={0} />
+          </LinearGradient>
+          <LinearGradient id="trendLine" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0%" stopColor={theme.accent} />
+            <Stop offset="100%" stopColor={theme.accentDeep} />
+          </LinearGradient>
+          <ClipPath id="trendReveal">
+            <AnimatedRect x={0} y={0} height={H} animatedProps={clipProps} />
+          </ClipPath>
+        </Defs>
+
+        <G clipPath="url(#trendReveal)">
+          {areaPath ? <Path d={areaPath} fill="url(#trendArea)" /> : null}
+          {linePath ? (
+            <Path
+              d={linePath}
+              stroke="url(#trendLine)"
+              strokeWidth={2.5}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : null}
+          {pts.map((pt, idx) => {
+            const isBest = pt.ms === min;
+            return (
+              <Circle
+                key={idx}
+                cx={pt.x}
+                cy={pt.y}
+                r={isBest ? 4.5 : 3}
+                fill={isBest ? theme.accentDeep : theme.surface}
+                stroke={isBest ? theme.accentDeep : theme.accent}
+                strokeWidth={2}
+              />
+            );
+          })}
+        </G>
+      </Svg>
+
+      <View style={[styles.axisLabels, { width }]}>
+        {data.map((d, i) => {
+          const colW = 24;
+          return (
+            <Text
+              key={i}
+              style={[
+                styles.axisLabel,
+                { color: theme.textFaint, width: colW, left: xFor(i) - colW / 2 },
+              ]}
+            >
+              {d.label}
+            </Text>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -558,12 +740,6 @@ export default function InsightsScreen({
         ? Math.round(durationMsList.reduce((acc, val) => acc + val, 0) / durationMsList.length / 1000)
         : 0;
 
-    const onTimeEvents = beatenEvents.filter((e) => e.snoozeCount === 0);
-    const onTimeRate = beatenEvents.length > 0 ? onTimeEvents.length / beatenEvents.length : 1.0;
-
-    const snoozedEvents = beatenEvents.filter((e) => e.snoozeCount > 0);
-    const snoozeRate = beatenEvents.length > 0 ? snoozedEvents.length / beatenEvents.length : 0.0;
-
     const enabledAlarms = dbAlarms.filter((a) => a.enabled);
     let targetMinutes = 7 * 60; // 7:00 AM default
     if (enabledAlarms.length > 0) {
@@ -579,32 +755,120 @@ export default function InsightsScreen({
     const getMondayStartIdx = (day: number) => (day === 0 ? 6 : day - 1);
 
     const now = new Date();
-    let rhythmFilteredDays: typeof dbStreakDays = [];
+    const startOfDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+    // ── Period window + trend buckets ────────────────────────────────
+    // The Week / Month / Year segment scopes everything below: the stat
+    // tiles, the time-to-rise trend, the wake rhythm and the challenge mix.
+    const periodWord = period === 0 ? 'week' : period === 1 ? 'month' : 'year';
+    const periodTag = period === 0 ? 'WEEK' : period === 1 ? 'MONTH' : 'YEAR';
+
+    let windowStart: number;
+    const buckets: { label: string; start: number; end: number }[] = [];
 
     if (period === 0) {
-      const currentDay = now.getDay();
-      const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1;
-      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distanceToMonday);
-      monday.setHours(0, 0, 0, 0);
-      rhythmFilteredDays = dbStreakDays.filter((d) => {
-        const date = new Date(d.firstBeatenAt || d.createdAt);
-        return date >= monday;
+      // This week, Monday → Sunday: one bucket per day.
+      const today = startOfDay(now);
+      const back = today.getDay() === 0 ? 6 : today.getDay() - 1;
+      const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - back);
+      windowStart = monday.getTime();
+      daysOfWeekLabels.forEach((label, i) => {
+        const s = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+        const e = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i + 1);
+        buckets.push({ label, start: s.getTime(), end: e.getTime() });
       });
     } else if (period === 1) {
-      const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
-      thirtyDaysAgo.setHours(0, 0, 0, 0);
-      rhythmFilteredDays = dbStreakDays.filter((d) => {
-        const date = new Date(d.firstBeatenAt || d.createdAt);
-        return date >= thirtyDaysAgo;
-      });
+      // Last 30 days as six 5-day buckets, labelled by start day-of-month.
+      const span = 5;
+      const count = 6;
+      const today = startOfDay(now);
+      const start0 = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (span * count - 1));
+      windowStart = start0.getTime();
+      for (let i = 0; i < count; i++) {
+        const s = new Date(start0.getFullYear(), start0.getMonth(), start0.getDate() + i * span);
+        const e = new Date(start0.getFullYear(), start0.getMonth(), start0.getDate() + (i + 1) * span);
+        buckets.push({ label: String(s.getDate()), start: s.getTime(), end: e.getTime() });
+      }
     } else {
-      const yearAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365);
-      yearAgo.setHours(0, 0, 0, 0);
-      rhythmFilteredDays = dbStreakDays.filter((d) => {
-        const date = new Date(d.firstBeatenAt || d.createdAt);
-        return date >= yearAgo;
-      });
+      // Last 12 months, one bucket per month labelled by initial.
+      const monthInitials = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+      const start0 = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+      windowStart = start0.getTime();
+      for (let i = 0; i < 12; i++) {
+        const s = new Date(start0.getFullYear(), start0.getMonth() + i, 1);
+        const e = new Date(start0.getFullYear(), start0.getMonth() + i + 1, 1);
+        buckets.push({ label: monthInitials[s.getMonth()], start: s.getTime(), end: e.getTime() });
+      }
     }
+
+    // Beaten events inside the selected window.
+    const periodBeaten = beatenEvents.filter(
+      (e) => e.resolvedAt != null && e.resolvedAt.getTime() >= windowStart,
+    );
+    const periodBeatenCount = periodBeaten.length;
+
+    // ── Time to rise: alarm fired → challenge beaten (snooze time included,
+    // i.e. how long until you're actually up), averaged per bucket.
+    const timeToRise = buckets.map((b) => {
+      const inBucket = periodBeaten.filter(
+        (e) =>
+          e.durationMs != null &&
+          e.resolvedAt != null &&
+          e.resolvedAt.getTime() >= b.start &&
+          e.resolvedAt.getTime() < b.end,
+      );
+      const avg =
+        inBucket.length > 0
+          ? Math.round(inBucket.reduce((s, e) => s + (e.durationMs || 0), 0) / inBucket.length)
+          : null;
+      return { label: b.label, ms: avg };
+    });
+
+    const periodDurations = periodBeaten
+      .map((e) => e.durationMs)
+      .filter((d): d is number => d != null);
+    const avgRiseMs =
+      periodDurations.length > 0
+        ? Math.round(periodDurations.reduce((s, d) => s + d, 0) / periodDurations.length)
+        : 0;
+    const fastestMs = periodDurations.length > 0 ? Math.min(...periodDurations) : null;
+
+    // Trend: first vs last bucket with data. Negative = getting faster.
+    const presentBuckets = timeToRise.filter(
+      (t): t is { label: string; ms: number } => t.ms != null,
+    );
+    let trendPct: number | null = null;
+    if (presentBuckets.length >= 2) {
+      const first = presentBuckets[0].ms;
+      const last = presentBuckets[presentBuckets.length - 1].ms;
+      if (first > 0) trendPct = Math.round(((last - first) / first) * 100);
+    }
+
+    // Period-scoped on-time / snooze rates.
+    const periodOnTime = periodBeaten.filter((e) => e.snoozeCount === 0);
+    const onTimeRate = periodBeaten.length > 0 ? periodOnTime.length / periodBeaten.length : 1.0;
+    const periodSnoozed = periodBeaten.filter((e) => e.snoozeCount > 0);
+    const snoozeRate = periodBeaten.length > 0 ? periodSnoozed.length / periodBeaten.length : 0.0;
+
+    // One-line takeaway for the period.
+    let insight: string;
+    if (trendPct != null && trendPct <= -5) {
+      insight = `You're rising ${-trendPct}% faster than the start of the ${periodWord}.`;
+    } else if (trendPct != null && trendPct >= 5) {
+      insight = `You're taking ${trendPct}% longer than the start of the ${periodWord}.`;
+    } else if (periodBeatenCount > 0 && presentBuckets.length >= 2) {
+      insight = `Your time to rise is holding steady this ${periodWord}.`;
+    } else if (periodBeatenCount > 0) {
+      insight = `${periodBeatenCount} ${periodBeatenCount === 1 ? 'alarm' : 'alarms'} beaten this ${periodWord} — keep going.`;
+    } else {
+      insight = `No alarms beaten yet this ${periodWord}.`;
+    }
+
+    const rhythmFilteredDays = dbStreakDays.filter((d) => {
+      const date = new Date(d.firstBeatenAt || d.createdAt);
+      return date.getTime() >= windowStart;
+    });
 
     const weekdaySums = Array.from({ length: 7 }, () => 0);
     const weekdayCounts = Array.from({ length: 7 }, () => 0);
@@ -656,6 +920,8 @@ export default function InsightsScreen({
     });
 
     dbEvents.forEach((e) => {
+      // Scope the challenge mix to the selected window too.
+      if ((e.resolvedAt ?? e.firedAt).getTime() < windowStart) return;
       const type = e.challenge;
       if (challengeStats[type]) {
         challengeStats[type].total++;
@@ -694,6 +960,14 @@ export default function InsightsScreen({
       targetMinutes,
       heatmap,
       challenges,
+      timeToRise,
+      avgRiseMs,
+      fastestMs,
+      trendPct,
+      insight,
+      periodBeatenCount,
+      periodWord,
+      periodTag,
     };
   }, [propData, dbStreakState, dbEvents, dbStreakDays, dbAlarms, period]);
 
@@ -837,11 +1111,12 @@ export default function InsightsScreen({
                 <Text style={[styles.heroNumber, { color: theme.text }]}>
                   {computedData.currentStreak}
                 </Text>
-                <Text style={[styles.heroUnit, { color: theme.accentDeep }]}>
-                  DAY STREAK
-                </Text>
               </View>
             </View>
+
+            <Text style={[styles.heroUnit, { color: theme.accent }]}>
+              {computedData.currentStreak === 1 ? 'DAY STREAK' : 'DAYS STREAK'}
+            </Text>
 
             <Text style={[styles.heroSub, { color: theme.textDim }]}>
               {computedData.currentStreak >= computedData.longestStreak && computedData.currentStreak > 0
@@ -851,20 +1126,81 @@ export default function InsightsScreen({
           </View>
         </Animated.View>
 
-        {/* Stat tiles */}
+        {/* Stat tiles — scoped to the selected period */}
         <Animated.View
           entering={FadeInDown.delay(130).springify().damping(18)}
           style={styles.tileGrid}
         >
-          <StatTile value={String(computedData.totalBeaten)} label="ALARMS BEATEN" theme={theme} />
+          <StatTile
+            value={String(computedData.periodBeatenCount)}
+            label={`BEATEN · ${computedData.periodTag}`}
+            theme={theme}
+          />
           <StatTile value={String(computedData.longestStreak)} unit="days" label="LONGEST STREAK" theme={theme} />
-          <StatTile value={String(computedData.avgSilenceSec)} unit="sec" label="AVG TO SILENCE" theme={theme} />
           <StatTile
             value={`${Math.round(computedData.onTimeRate * 100)}`}
             unit="%"
             label="ON-TIME RATE"
             theme={theme}
           />
+          <StatTile
+            value={`${Math.round(computedData.snoozeRate * 100)}`}
+            unit="%"
+            label="SNOOZE RATE"
+            theme={theme}
+          />
+        </Animated.View>
+
+        {/* Time to rise — alarm → up, trending over the period */}
+        <Animated.View entering={FadeInDown.delay(155).springify().damping(18)}>
+          <Text style={[styles.sectionLabel, { color: theme.textFaint }]}>
+            TIME TO RISE
+          </Text>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
+            ]}
+          >
+            <View style={styles.riseHeader}>
+              <View>
+                <Text style={[styles.riseValue, { color: theme.text }]}>
+                  {computedData.periodBeatenCount > 0
+                    ? fmtDuration(computedData.avgRiseMs)
+                    : '—'}
+                </Text>
+                <Text style={[styles.riseValueLabel, { color: theme.textFaint }]}>
+                  AVG · ALARM TO UP
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end', gap: 7 }}>
+                {computedData.trendPct != null && (
+                  <View style={[styles.trendChip, { backgroundColor: theme.chipBg }]}>
+                    <Text
+                      style={[
+                        styles.trendChipText,
+                        { color: computedData.trendPct <= 0 ? theme.chipText : theme.accentDeep },
+                      ]}
+                    >
+                      {computedData.trendPct <= 0 ? '▼' : '▲'}{' '}
+                      {Math.abs(computedData.trendPct)}% {computedData.trendPct <= 0 ? 'faster' : 'slower'}
+                    </Text>
+                  </View>
+                )}
+                {computedData.fastestMs != null && (
+                  <Text style={[styles.riseBest, { color: theme.textDim }]}>
+                    BEST {fmtDuration(computedData.fastestMs)}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            <TrendChart data={computedData.timeToRise} theme={theme} width={innerW} />
+
+            <Text style={[styles.riseInsight, { color: theme.textDim }]}>
+              {computedData.insight}
+            </Text>
+          </View>
         </Animated.View>
 
         {/* Wake rhythm */}
@@ -996,14 +1332,14 @@ const styles = StyleSheet.create({
   },
   heroUnit: {
     fontFamily: 'SpaceMono_400Regular',
-    fontSize: 9.5,
-    letterSpacing: 2,
-    marginTop: 2,
+    fontSize: 11,
+    letterSpacing: 3,
+    marginTop: 14,
   },
   heroSub: {
     fontFamily: 'Sora_400Regular',
     fontSize: 13,
-    marginTop: 16,
+    marginTop: 8,
     textAlign: 'center',
   },
 
@@ -1054,18 +1390,59 @@ const styles = StyleSheet.create({
     padding: 20,
   },
 
-  /* Rhythm chart */
-  rhythmLabels: {
+  /* Time to rise */
+  riseHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
-    paddingHorizontal: 0,
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
-  rhythmLabel: {
+  riseValue: {
+    fontFamily: 'InstrumentSerif_400Regular_Italic',
+    fontSize: 40,
+    lineHeight: 44,
+  },
+  riseValueLabel: {
+    fontFamily: 'SpaceMono_400Regular',
+    fontSize: 9.5,
+    letterSpacing: 1.5,
+    marginTop: 2,
+  },
+  trendChip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  trendChipText: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 11,
+  },
+  riseBest: {
+    fontFamily: 'SpaceMono_400Regular',
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  riseInsight: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 14,
+  },
+  /* Shared x-axis labels — absolutely placed under each data point */
+  axisLabels: {
+    position: 'relative',
+    height: 16,
+    marginTop: 8,
+  },
+  axisLabel: {
+    position: 'absolute',
+    top: 0,
     fontFamily: 'Sora_500Medium',
     fontSize: 11,
     textAlign: 'center',
   },
+
+  /* Rhythm chart */
   rhythmCaption: {
     flexDirection: 'row',
     alignItems: 'center',

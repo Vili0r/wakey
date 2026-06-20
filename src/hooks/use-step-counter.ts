@@ -13,8 +13,8 @@
  * feedback matters more than hardware-grade accuracy.
  */
 
-import { useEffect, useRef, useState } from 'react';
 import { Accelerometer } from 'expo-sensors';
+import { useEffect, useState } from 'react';
 
 export type StepSource = 'pending' | 'accelerometer';
 
@@ -31,7 +31,7 @@ export function useStepCounter(active: boolean) {
       Accelerometer.setUpdateInterval(80); // ~12.5 Hz
       // Acceleration magnitude (in g). ~1 at rest; a stride produces a clear
       // peak then trough. Count one step per peak→trough crossing, debounced.
-      const PEAK = 1.08;
+      const PEAK = 1.13;
       const TROUGH = 1.0;
       const MIN_STEP_GAP_MS = 250;
       let armed = false;
