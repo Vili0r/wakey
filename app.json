@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "wakey",
+    "name": "Wakey",
     "slug": "wakey",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "deploymentTarget": "17.0",
-      "icon": "./assets/expo.icon",
+      "icon": {
+        "dark": "./assets/icons/ios-dark.png",
+        "light": "./assets/icons/ios-light.png",
+        "tinted": "./assets/icons/ios-tinted.png"
+      },
       "infoPlist": {
         "NSAlarmKitUsageDescription": "This application requires permission to schedule and manage alarms.",
         "NSCameraUsageDescription": "Wakey uses the camera to verify you've completed your wake-up challenge.",
@@ -45,10 +49,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
+          "image": "./assets/icons/splash-icon-dark.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "image": "./assets/icons/splash-icon-light.png",
+            "backgroundColor": "#000000"
           }
         }
       ],
@@ -79,6 +86,15 @@
       "expo-image",
       "expo-asset",
       "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icons/ios-dark.png",
+          "color": "#ffffff",
+          "defaultChannel": "meeting-reminders",
+          "enableBackgroundRemoteNotifications": true
+        }
+      ],
       "expo-video"
     ],
     "experiments": {

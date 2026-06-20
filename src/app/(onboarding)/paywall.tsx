@@ -7,8 +7,8 @@
 import { OB } from '@/components/onboarding/onboarding-shell';
 import { PaywallShell } from '@/components/onboarding/paywall-shell';
 import { PRICING } from '@/onboarding/pricing';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { router } from 'expo-router';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 // Placeholder clip — swap for a real Wakey screen-capture (local require or URL).
@@ -30,7 +30,7 @@ export default function Paywall() {
 
   return (
     <PaywallShell
-      title="We want you to try Wakey for free."
+      title="Try Wakey for free."
       assurance="No Payment Due Now"
       ctaLabel={PRICING.trialCta}
       onCta={() => router.push('/paywall-reminder')}

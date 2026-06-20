@@ -7,11 +7,10 @@
 
 import { OB } from '@/components/onboarding/onboarding-shell';
 import { Haptics } from '@/utils/alarm-store';
-import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 
 export function PaywallShell({
   title,
@@ -22,7 +21,6 @@ export function PaywallShell({
   onCta,
   busy = false,
   belowCta,
-  showBack = true,
 }: {
   title: string;
   subtitle?: string;
@@ -34,49 +32,16 @@ export function PaywallShell({
   busy?: boolean;
   /** Free-form copy under the button (price, legal, secondary action). */
   belowCta?: ReactNode;
-  showBack?: boolean;
 }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
-      <View style={styles.topBar}>
-        {showBack ? (
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              if (router.canGoBack()) router.back();
-            }}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            style={styles.backBtn}
-          >
-            <Svg width={18} height={18} viewBox="0 0 24 24">
-              <Path
-                d="M15 19L8 12L15 5"
-                stroke={OB.text}
-                strokeWidth={2.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            </Svg>
-          </Pressable>
-        ) : (
-          <View style={styles.backBtn} />
-        )}
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-      >
+    <View style={[styles.root, { paddingTop: insets.top + 20 }]}>
+      <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         {children}
-      </ScrollView>
+      </View>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
         {assurance ? (
@@ -96,9 +61,16 @@ export function PaywallShell({
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             onCta();
           }}
-          style={({ pressed }) => [styles.cta, { opacity: busy ? 0.55 : pressed ? 0.9 : 1 }]}
+          style={({ pressed }) => [{ opacity: busy ? 0.55 : pressed ? 0.92 : 1 }]}
         >
-          <Text style={styles.ctaText}>{ctaLabel}</Text>
+          <LinearGradient
+            colors={OB.gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.cta}
+          >
+            <Text style={styles.ctaText}>{ctaLabel}</Text>
+          </LinearGradient>
         </Pressable>
 
         {belowCta ? <View style={styles.belowCta}>{belowCta}</View> : null}
@@ -109,9 +81,7 @@ export function PaywallShell({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: OB.bg },
-  topBar: { height: 40, paddingHorizontal: 20, justifyContent: 'center' },
-  backBtn: { width: 36, height: 36, alignItems: 'flex-start', justifyContent: 'center' },
-  scroll: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24, flexGrow: 1 },
+  content: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24, flex: 1 },
   title: {
     fontFamily: OB.sansBold,
     fontSize: 30,
@@ -135,10 +105,9 @@ const styles = StyleSheet.create({
   cta: {
     height: 60,
     borderRadius: 30,
-    backgroundColor: OB.text,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaText: { fontFamily: OB.sansBold, fontSize: 18, color: '#FFFFFF', letterSpacing: 0.2 },
+  ctaText: { fontFamily: OB.sansBold, fontSize: 18, color: OB.onAccent, letterSpacing: 0.2 },
   belowCta: { alignItems: 'center', marginTop: 12 },
 });
