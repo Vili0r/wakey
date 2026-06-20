@@ -78,6 +78,45 @@ export function elbowAngle(p: PersonKeypoints): number | null {
   return average(left, right);
 }
 
+/**
+ * A representative body size in pixels — used as a proximity signal for
+ * push-ups when the phone is flat on the ground. As the chest lowers toward a
+ * floor-placed phone the whole body grows in frame; pushing up shrinks it.
+ *
+ * Picks the most reliable available measurement, in order:
+ *   1. shoulder-midpoint → hip-midpoint distance (torso length),
+ *   2. inter-shoulder distance,
+ *   3. nose → shoulder-midpoint distance.
+ * Returns null when not even the shoulders are visible.
+ */
+export function bodyScale(p: PersonKeypoints): number | null {
+  const sL = p.LEFT_SHOULDER;
+  const sR = p.RIGHT_SHOULDER;
+  if (!isVisible(sL) || !isVisible(sR)) return null;
+  const shoulderMid = { x: (sL.x + sR.x) / 2, y: (sL.y + sR.y) / 2 };
+
+  const hL = p.LEFT_HIP;
+  const hR = p.RIGHT_HIP;
+  const hips = [hL, hR].filter(isVisible) as Keypoint[];
+  if (hips.length > 0) {
+    const hipMid =
+      hips.length === 2
+        ? { x: (hips[0].x + hips[1].x) / 2, y: (hips[0].y + hips[1].y) / 2 }
+        : hips[0];
+    const torso = Math.hypot(shoulderMid.x - hipMid.x, shoulderMid.y - hipMid.y);
+    if (torso > 0) return torso;
+  }
+
+  const interShoulder = Math.hypot(sL.x - sR.x, sL.y - sR.y);
+  if (interShoulder > 0) return interShoulder;
+
+  if (isVisible(p.NOSE)) {
+    const d = Math.hypot(p.NOSE.x - shoulderMid.x, p.NOSE.y - shoulderMid.y);
+    if (d > 0) return d;
+  }
+  return null;
+}
+
 /** How many of the given keypoints are visible — used for guidance prompts. */
 export function visibleCount(
   p: PersonKeypoints,

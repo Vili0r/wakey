@@ -122,7 +122,6 @@ export const DEFAULT_DATA: InsightsData = {
   }),
   challenges: [
     { glyph: '÷', name: 'Equations', beaten: 28, total: 31 },
-    { glyph: '≈', name: 'Shake', beaten: 12, total: 13 },
     { glyph: '◫', name: 'Pattern', beaten: 5, total: 8 },
     { glyph: '∴', name: 'Steps', beaten: 2, total: 2 },
   ],
@@ -641,13 +640,11 @@ export default function InsightsScreen({
 
     const CHALLENGES_MAP: Record<ChallengeType, { glyph: string; name: string }> = {
       math: { glyph: '÷', name: 'Equations' },
-      shake: { glyph: '≈', name: 'Shake' },
       pattern: { glyph: '◫', name: 'Pattern recall' },
       steps: { glyph: '∴', name: 'Steps' },
       pushups: { glyph: '⤓', name: 'Push-ups' },
       squats: { glyph: '⇕', name: 'Squats' },
       photo: { glyph: '◎', name: 'Sky photo' },
-      scan: { glyph: '⊡', name: 'Code hunt' },
       'find-item': { glyph: '⊡', name: 'Find an item' },
       bed: { glyph: '▭', name: 'Make your bed' },
       meds: { glyph: '✚', name: 'Medication' },
@@ -683,7 +680,6 @@ export default function InsightsScreen({
     if (challenges.length === 0) {
       challenges = [
         { glyph: '÷', name: 'Equations', beaten: 0, total: 0 },
-        { glyph: '≈', name: 'Shake', beaten: 0, total: 0 },
       ];
     }
 

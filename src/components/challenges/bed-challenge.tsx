@@ -53,9 +53,14 @@ export default function BedChallenge({
     (detections: Detection[]) => {
       if (done.current || !started) return;
 
-      // Filter for 'bed' detections
+      // Filter for 'bed' detections. COCO labels are uppercase (e.g. 'BED'),
+      // so compare case-insensitively to be robust across model variants.
       const match = detections
-        .filter((d) => d.label === 'bed' && d.score >= DETECTION_THRESHOLD)
+        .filter(
+          (d) =>
+            String(d.label).toUpperCase() === 'BED' &&
+            d.score >= DETECTION_THRESHOLD,
+        )
         .sort((a, b) => b.score - a.score)[0];
 
       if (!match) {
@@ -81,6 +86,7 @@ export default function BedChallenge({
   }, []);
 
   const rof = model.runOnFrame;
+  const isReady = model.isReady;
   const frameCount = useSharedValue(0);
 
   const frameOutput = useFrameOutput({
@@ -90,24 +96,23 @@ export default function BedChallenge({
       (frame: Frame) => {
         'worklet';
         try {
-          if (!isActive || !started) {
-            frame.dispose();
+          // Don't run inference until the model has finished loading, otherwise
+          // ExecuTorch throws "Model not loaded" (code 102) on early frames.
+          if (!isActive || !started || !isReady || !rof) {
             return;
           }
           frameCount.value = (frameCount.value + 1) % 3;
           if (frameCount.value !== 0) {
-            frame.dispose();
             return;
           }
 
-          if (!rof) return;
           const result = rof(frame, false, { detectionThreshold: DETECTION_THRESHOLD });
           if (result) scheduleOnRN(onDetections, result as Detection[]);
         } finally {
           frame.dispose();
         }
       },
-      [rof, onDetections, isActive, started],
+      [rof, onDetections, isActive, started, isReady],
     ),
   });
 

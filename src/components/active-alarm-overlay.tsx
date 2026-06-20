@@ -32,7 +32,6 @@ import FindItemChallenge from './challenges/find-item-challenge';
 import MathChallenge from './challenges/math-challenge';
 import PatternChallenge from './challenges/pattern-challenge';
 import PushupsChallenge from './challenges/pushups-challenge';
-import ShakeChallenge from './challenges/shake-challenge';
 import SquatsChallenge from './challenges/squats-challenge';
 import StepsChallenge from './challenges/steps-challenge';
 import PhotoChallenge from './challenges/photo-challenge';
@@ -44,13 +43,11 @@ export type { ActiveAlarm };
 const getChallengeGlyph = (challengeId: string) => {
   const mapping = {
     math: '÷',
-    shake: '≈',
     pattern: '◫',
     steps: '∴',
     pushups: '⤓',
     squats: '⇕',
     photo: '◎',
-    scan: '⊡',
     'find-item': '⊡',
     bed: '▭',
     meds: '✚',
@@ -61,13 +58,11 @@ const getChallengeGlyph = (challengeId: string) => {
 const getChallengeName = (challengeId: string) => {
   const mapping = {
     math: 'Equations',
-    shake: 'Shake',
     pattern: 'Pattern Recall',
     steps: 'Steps',
     pushups: 'Push-ups',
     squats: 'Squats',
     photo: 'Sky Photo',
-    scan: 'Code Hunt',
     'find-item': 'Find Item',
     bed: 'Make Bed',
     meds: 'Medication',
@@ -350,7 +345,6 @@ function ChallengeView({
       return <SquatsChallenge {...common} />;
     case 'pushups':
       return <PushupsChallenge {...common} />;
-    case 'scan':
     case 'find-item':
       return <FindItemChallenge onComplete={onComplete} onAbort={onAbort} itemIds={alarm.findItemIds} />;
     case 'photo':
@@ -361,8 +355,6 @@ function ChallengeView({
       return <MedsChallenge {...common} />;
     case 'math':
       return <MathChallenge {...common} />;
-    case 'shake':
-      return <ShakeChallenge {...common} />;
     case 'pattern':
       return <PatternChallenge {...common} />;
     case 'steps':

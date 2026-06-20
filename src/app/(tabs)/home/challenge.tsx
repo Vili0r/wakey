@@ -15,13 +15,6 @@ export const CHALLENGES = [
     desc: 'Solve to silence',
   },
   {
-    id: 'shake',
-    glyph: '≈',
-    icon: 'hand.wave',
-    name: 'Shake',
-    desc: 'Wake your arms first',
-  },
-  {
     id: 'pattern',
     glyph: '◫',
     icon: 'square.grid.2x2',
@@ -69,13 +62,6 @@ export const CHALLENGES = [
     icon: 'pills',
     name: 'Medication',
     desc: 'Take it before you forget',
-  },
-  {
-    id: 'scan',
-    glyph: '⊡',
-    icon: 'barcode.viewfinder',
-    name: 'Code hunt',
-    desc: 'Scan a code across the room',
   },
   {
     id: 'find-item',

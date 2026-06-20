@@ -1,12 +1,15 @@
 /**
- * Push-ups challenge — front camera, elbow-angle rep counting.
- * Mirrors Squats but tracks SHOULDER-ELBOW-WRIST and guards for upper-body
- * visibility (phone propped to see your upper body).
+ * Push-ups challenge — front camera, proximity (body-scale) rep counting.
+ *
+ * Designed for the phone lying flat on the floor, camera facing up: as the
+ * chest lowers toward the phone the body grows in frame; pushing up shrinks it.
+ * That size swing is a far more reliable signal than the 2-D elbow angle, which
+ * collapses under foreshortening when the arms point at the camera.
  */
 
-import { useRepCounter } from '@/hooks/use-rep-counter';
+import { useProximityRepCounter } from '@/hooks/use-proximity-rep-counter';
 import {
-  elbowAngle,
+  bodyScale,
   visibleCount,
   type PersonKeypoints,
 } from '@/utils/pose-math';
@@ -59,10 +62,9 @@ export default function PushupsChallenge({
     [onComplete],
   );
 
-  const { push, hintFor } = useRepCounter({
-    downThreshold: 90, // chest lowered, elbow bent
-    upThreshold: 160, // arms extended
-    minIntervalMs: 350,
+  const { push } = useProximityRepCounter({
+    minIntervalMs: 500,
+    minAmplitudeRatio: 0.15,
     onRep: (c) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setCount(c);
@@ -93,33 +95,30 @@ export default function PushupsChallenge({
       }
       noPersonFrames.current = 0;
 
-      const visible = visibleCount(person, [
-        'LEFT_SHOULDER',
-        'RIGHT_SHOULDER',
-        'LEFT_ELBOW',
-        'RIGHT_ELBOW',
-        'LEFT_WRIST',
-        'RIGHT_WRIST',
-      ]);
+      // Need at least both shoulders to measure body size reliably.
+      const visible = visibleCount(person, ['LEFT_SHOULDER', 'RIGHT_SHOULDER']);
       if (visible < 2) {
         const now = Date.now();
         lowVisibilitySince.current ??= now;
         if (now - lowVisibilitySince.current > 2000) {
-          setHint('Prop your phone so it can see your upper body');
+          setHint('Move so the camera sees your head and shoulders');
         }
         return;
       }
       lowVisibilitySince.current = null;
 
-      const angle = elbowAngle(person);
-      if (angle == null) {
-        setHint('Show your arms to the camera');
+      const scale = bodyScale(person);
+      if (scale == null) {
+        setHint('Move so the camera sees your head and shoulders');
         return;
       }
-      push(angle);
-      setHint(hintFor(angle, 'Lower your chest', 'Push up'));
+
+      const state = push(scale);
+      if (state === 'calibrating') setHint('Do a full push-up to calibrate');
+      else if (state === 'bottom') setHint('Push up');
+      else setHint('Lower your chest');
     },
-    [push, hintFor],
+    [push],
   );
 
   const rof = model.runOnFrame;
@@ -175,9 +174,9 @@ export default function PushupsChallenge({
         <ChallengeIntro
           title="Push-ups"
           steps={[
-            'Prop your phone to the side so it can see your upper body.',
-            'Get into a push-up position facing the camera.',
-            'Lower your chest, then push back up.',
+            'Place your phone flat on the floor, screen facing up.',
+            'Get into a push-up position with your head and shoulders over it.',
+            'Lower your chest toward the phone, then push back up.',
           ]}
           goal={`Complete ${target} push-ups to turn off the alarm.`}
           onStart={handleStart}

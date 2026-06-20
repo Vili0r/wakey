@@ -1,17 +1,14 @@
 /**
- * Steps challenge — walk a certain number of steps to dismiss.
- * Conforms to the shared ChallengeProps contract.
+ * Steps challenge — walk a number of real steps to dismiss.
+ *
+ * Counts actual walking via accelerometer peak-detection, incrementing the
+ * counter the instant each step is taken.
  */
 
-import React, { useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Dimensions,
-} from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { Haptics } from '@/utils/alarm-store';
+import { useStepCounter } from '@/hooks/use-step-counter';
 import { type ChallengeProps, type ChallengeResult, targetFor } from '@/types/challenge';
 import { Colors } from '@/constants/theme';
 
@@ -20,18 +17,33 @@ const { width } = Dimensions.get('window');
 export default function StepsChallenge({
   difficulty,
   targetReps,
+  onProgress,
   onComplete,
   onAbort,
 }: ChallengeProps) {
   const target = targetFor(difficulty, targetReps) * 5; // Steps are scaled up
-  const [steps, setSteps] = useState(0);
   const startedAt = useRef(Date.now());
   const done = useRef(false);
+  const [active, setActive] = useState(true);
 
-  const handleStep = () => {
+  const { steps, source } = useStepCounter(active);
+  const display = Math.min(steps, target);
+  const lastHaptic = useRef(0);
+
+  // React to step changes: progress, haptic feedback, and completion.
+  useEffect(() => {
     if (done.current) return;
-    if (steps + 1 >= target) {
+    onProgress?.(display, target);
+
+    // Light tick on each new step.
+    if (steps > lastHaptic.current && source !== 'pending') {
+      lastHaptic.current = steps;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+
+    if (steps >= target) {
       done.current = true;
+      setActive(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const result: ChallengeResult = {
         completed: true,
@@ -39,26 +51,26 @@ export default function StepsChallenge({
         durationMs: Date.now() - startedAt.current,
       };
       onComplete(result);
-    } else {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setSteps((s) => s + 1);
     }
-  };
+  }, [steps, display, target, source, onComplete, onProgress]);
+
+  const statusLine =
+    source === 'accelerometer'
+      ? 'Walk with your phone to count steps'
+      : 'Getting motion sensors ready…';
 
   return (
     <View style={styles.challengeContainer}>
       <Text style={styles.challengeTitle}>Walk it off</Text>
       <Text style={styles.challengeProgress}>
-        {steps} / {target} Steps Taken
+        {display} / {target} Steps Taken
       </Text>
 
       <View style={styles.iconContainer}>
         <Text style={styles.largeIcon}>👣</Text>
       </View>
 
-      <TouchableOpacity style={styles.actionButton} onPress={handleStep}>
-        <Text style={styles.actionButtonText}>TAKE A STEP</Text>
-      </TouchableOpacity>
+      <Text style={styles.statusText}>{statusLine}</Text>
     </View>
   );
 }
@@ -93,23 +105,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 20,
   },
   largeIcon: {
     fontSize: 48,
   },
-  actionButton: {
-    backgroundColor: Colors.dark.accent,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 30,
-    width: '100%',
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    color: '#1A1206',
-    fontSize: 16,
-    fontFamily: 'Sora_700Bold',
-    letterSpacing: 1.5,
+  statusText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: 'Sora_500Medium',
+    textAlign: 'center',
+    marginBottom: 24,
   },
 });

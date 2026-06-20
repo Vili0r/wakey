@@ -315,7 +315,7 @@ export default function RootLayout() {
             if (diff > 0 && diff <= fifteenMins) {
               if (alarm.challenge === 'squats' || alarm.challenge === 'pushups') {
                 needsPose = true;
-              } else if (alarm.challenge === 'scan' || alarm.challenge === 'find-item') {
+              } else if (alarm.challenge === 'find-item') {
                 needsObject = true;
               }
             }

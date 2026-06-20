@@ -154,7 +154,7 @@ export const INITIAL_ALARMS: Alarm[] = [
     minute: 45,
     label: 'Slow morning',
     days: [0, 6],
-    challenge: { glyph: '≈', label: 'SHAKE' },
+    challenge: { glyph: '∴', label: 'STEPS' },
     enabled: true,
     difficulty: 'standard',
   },
@@ -400,13 +400,11 @@ export function scheduleAlarmNative(alarm: Alarm) {
 
 export const CHALLENGE_MAPPING: Record<string, { glyph: string; label: string }> = {
   math: { glyph: '÷', label: 'SOLVE EQUATIONS' },
-  shake: { glyph: '≈', label: 'SHAKE' },
   pattern: { glyph: '◫', label: 'PATTERN RECALL' },
   steps: { glyph: '∴', label: 'STEPS' },
   pushups: { glyph: '⤓', label: 'PUSH-UPS' },
   squats: { glyph: '⇕', label: 'SQUATS' },
   photo: { glyph: '◎', label: 'SKY PHOTO' },
-  scan: { glyph: '⊡', label: 'CODE HUNT' },
   'find-item': { glyph: '⊡', label: 'FIND AN ITEM' },
   bed: { glyph: '▭', label: 'MAKE YOUR BED' },
   meds: { glyph: '✚', label: 'MEDICATION' },
@@ -454,7 +452,6 @@ export function getChallengeId(challenge: { glyph: string; label: string }): Cha
     }
   }
   // Fall back to glyph-only matching for legacy data
-  if (challenge.glyph === '≈') return 'shake';
   if (challenge.glyph === '◫') return 'pattern';
   if (challenge.glyph === '∴') return 'steps';
   if (challenge.glyph === '⤓') return 'pushups';
@@ -463,8 +460,7 @@ export function getChallengeId(challenge: { glyph: string; label: string }): Cha
   if (challenge.glyph === '▭') return 'bed';
   if (challenge.glyph === '✚') return 'meds';
   if (challenge.glyph === '⊡') {
-    if (challenge.label.toUpperCase().includes('FIND')) return 'find-item';
-    return 'scan';
+    return 'find-item';
   }
   return 'math';
 }
@@ -849,7 +845,7 @@ export async function seedDemoInsightsData() {
 
   const now = new Date();
   const daysToSeed = 70;
-  const challengeTypes: ChallengeType[] = ['math', 'shake', 'pattern', 'steps', 'pushups', 'squats', 'photo', 'scan', 'find-item', 'bed', 'meds'];
+  const challengeTypes: ChallengeType[] = ['math', 'pattern', 'steps', 'pushups', 'squats', 'photo', 'find-item', 'bed', 'meds'];
 
   // Keep track of which days we beat alarms
   const beatenDays: { date: Date; localDay: string; count: number; firstBeatenAt: Date }[] = [];

@@ -13,7 +13,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, ReduceMotion } from 'react-native-reanimated';
 
 // A curated slice of the full challenge set — brain, body, movement, proof.
-const MISSION_IDS = ['math', 'shake', 'find-item', 'pushups', 'squats', 'pattern', 'steps', 'photo', 'bed'] as const;
+const MISSION_IDS = ['math', 'find-item', 'pushups', 'squats', 'pattern', 'steps', 'photo', 'bed'] as const;
 const MISSIONS = MISSION_IDS.map((id) => CHALLENGES.find((c) => c.id === id)!);
 
 export default function QMission() {

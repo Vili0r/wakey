@@ -1,13 +1,17 @@
 import { useTheme } from '@/hooks/use-theme';
 import { Stack, useRouter } from "expo-router";
-import { Button } from 'react-native';
+import { Button, useColorScheme } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
 export default function Layout() {
     const router = useRouter();
     const theme = useTheme();
+    const isDark = useColorScheme() === 'dark';
 
     return (
-        <Stack screenOptions={{ contentStyle: { backgroundColor: theme.background } }}>
+        <>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
+            <Stack screenOptions={{ contentStyle: { backgroundColor: theme.background } }}>
             <Stack.Screen
                 name="index"
                 options={{
@@ -42,5 +46,6 @@ export default function Layout() {
                 }}
             />
         </Stack>
+      </>
     );
 }
