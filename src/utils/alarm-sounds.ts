@@ -58,6 +58,48 @@ export const ALARM_SOUNDS: AlarmSound[] = [
     description: 'Fast, urgent arcade-style pulse',
     source: require('../../assets/sounds/digital_pulse.wav'),
   },
+  {
+    id: 'morning_glow',
+    name: 'Morning Glow',
+    description: 'A soft melodic rise to ease you awake',
+    source: require('../../assets/sounds/morning-clock-alarm.wav'),
+  },
+  {
+    id: 'stardust',
+    name: 'Stardust',
+    description: 'Dreamy, twinkling tones — a gentle lift',
+    source: require('../../assets/sounds/star-dust-alarm-clock.mp3'),
+  },
+  {
+    id: 'melody',
+    name: 'Melody',
+    description: 'A warm musical phrase — the classic wake-up',
+    source: require('../../assets/sounds/musical_alarm.mp3'),
+  },
+  {
+    id: 'chime_up',
+    name: 'Chime Up',
+    description: 'A short, bright melodic chime',
+    source: require('../../assets/sounds/musical-alarm.mp3'),
+  },
+  {
+    id: 'chiptune',
+    name: 'Chiptune',
+    description: 'Retro 8-bit arcade wake-up',
+    source: require('../../assets/sounds/chiptune-alarm-clock.mp3'),
+  },
+  {
+    id: 'digital_buzzer',
+    name: 'Digital Buzzer',
+    description: 'Insistent digital buzz — hard to ignore',
+    source: require('../../assets/sounds/digital-alarm-buzzer.wav'),
+  },
+  {
+    id: 'red_alert',
+    name: 'Red Alert',
+    description: 'Relentless emergency siren — you WILL get up',
+    source: require('../../assets/sounds/retro-game-emergency-alarm.wav'),
+  },
 ];
 
 /** The fallback tone — also the value stored as the DB defaults. */

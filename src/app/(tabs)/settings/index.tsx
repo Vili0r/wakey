@@ -1,8 +1,9 @@
 /* eslint-disable react-hooks/immutability */
 import SFIcon from '@/components/SF-icon';
-import SoundPicker from '@/components/sound-picker';
+import { db } from '@/db/db';
+import { settings as settingsTable, streakState } from '@/db/schema';
 import { getAlarmSound } from '@/utils/alarm-sounds';
-import { getDefaultSoundId, setDefaultSoundId } from '@/utils/settings-store';
+
 import {
   InstrumentSerif_400Regular_Italic,
   useFonts,
@@ -13,12 +14,11 @@ import {
   Sora_600SemiBold,
 } from '@expo-google-fonts/sora';
 import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
-import React, { useEffect, useState } from 'react';
-import { db } from '@/db/db';
-import { streakState } from '@/db/schema';
-import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
-import { clearAllDatabaseData, seedDemoInsightsData } from '@/utils/alarm-store';
 import { eq } from 'drizzle-orm';
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import Constants from 'expo-constants';
+import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
   Appearance,
   Platform,
@@ -79,6 +79,18 @@ const THEMES = {
 };
 
 type Theme = typeof THEMES.dark;
+
+const CHALLENGE_NAMES: Record<string, string> = {
+  math: 'Equations',
+  pattern: 'Pattern recall',
+  steps: 'Steps',
+  pushups: 'Push-ups',
+  squats: 'Squats',
+  photo: 'Sky photo',
+  'find-item': 'Find an item',
+  bed: 'Make your bed',
+  meds: 'Medication',
+};
 
 /* ------------------------------------------------------------------ */
 /* Shared building blocks (PressScale + your ThemeButton)              */
@@ -420,6 +432,27 @@ function Group({
 }
 
 /* ------------------------------------------------------------------ */
+/* Profile mini-stat                                                   */
+/* ------------------------------------------------------------------ */
+
+function ProfileStat({
+  value,
+  label,
+  theme,
+}: {
+  value: number;
+  label: string;
+  theme: Theme;
+}) {
+  return (
+    <View style={styles.profileStat}>
+      <Text style={[styles.profileStatValue, { color: theme.text }]}>{value}</Text>
+      <Text style={[styles.profileStatLabel, { color: theme.textFaint }]}>{label}</Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Screen                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -447,28 +480,47 @@ export default function SettingsScreen({
   });
 
   const [mode, setMode] = useState<ThemeMode>(globalThemeMode);
-  const [haptics, setHaptics] = useState(true);
-  const [autoSilence, setAutoSilence] = useState(false);
-  const [defaultSound, setDefaultSound] = useState<string | null>(null);
-  const [soundPickerOpen, setSoundPickerOpen] = useState(false);
 
   const { data: streakRows = [] } = useLiveQuery(db.select().from(streakState).where(eq(streakState.id, 1)));
-  const streak = streakRows[0] || { currentStreak: 0, totalBeaten: 0 };
+  const streak = streakRows[0] || { currentStreak: 0, longestStreak: 0, totalBeaten: 0 };
 
-  useEffect(() => {
-    let cancelled = false;
-    getDefaultSoundId().then((id) => {
-      if (!cancelled) setDefaultSound(id);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data: settingsRows = [] } = useLiveQuery(db.select().from(settingsTable).where(eq(settingsTable.id, 1)));
+  const dbSettings = settingsRows[0];
+  const haptics = dbSettings?.hapticsEnabled ?? true;
+  const autoSilence = (dbSettings?.autoSilenceSeconds ?? 0) > 0;
+  const defaultSound = dbSettings?.defaultSoundId ?? 'sunrise';
+  const defaultChallenge = dbSettings?.defaultChallenge ?? 'math';
+  const defaultDifficulty = dbSettings?.defaultDifficulty ?? 'standard';
 
-  const handleSelectSound = (id: string) => {
-    setDefaultSound(id);
-    setDefaultSoundId(id);
+  const toggleHaptics = async () => {
+    try {
+      await db
+        .update(settingsTable)
+        .set({ hapticsEnabled: !haptics, updatedAt: new Date() })
+        .where(eq(settingsTable.id, 1));
+    } catch (err) {
+      console.error('Failed to toggle haptics:', err);
+    }
   };
+
+  const toggleAutoSilence = async () => {
+    try {
+      const nextVal = !autoSilence;
+      const seconds = nextVal ? 600 : 0;
+      await db
+        .update(settingsTable)
+        .set({ autoSilenceSeconds: seconds, updatedAt: new Date() })
+        .where(eq(settingsTable.id, 1));
+    } catch (err) {
+      console.error('Failed to toggle auto-silence:', err);
+    }
+  };
+
+  const userName = (settingsRows[0]?.name ?? '').trim();
+  const displayName = userName || 'Riser';
+  const avatarInitial = displayName.charAt(0).toUpperCase();
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   if (!fontsLoaded) return null;
 
@@ -505,20 +557,30 @@ export default function SettingsScreen({
               { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
             ]}
           >
-            <View style={[styles.avatar, { backgroundColor: theme.chipBg }]}>
-              <Text style={[styles.avatarText, { color: theme.chipText }]}>G</Text>
+            <View style={styles.profileHeader}>
+              <View style={[styles.avatar, { backgroundColor: theme.chipBg }]}>
+                <Text style={[styles.avatarText, { color: theme.chipText }]}>{avatarInitial}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.profileGreeting, { color: theme.accent }]}>
+                  {greeting.toUpperCase()}
+                </Text>
+                <Text style={[styles.profileName, { color: theme.text }]} numberOfLines={1}>
+                  {displayName}
+                </Text>
+              </View>
+              <View style={[styles.streakChip, { backgroundColor: theme.chipBg }]}>
+                {Icon.flame(theme.chipText)}
+                <Text style={[styles.streakText, { color: theme.chipText }]}>{streak.currentStreak}</Text>
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.profileName, { color: theme.text }]}>
-                Good morning
-              </Text>
-              <Text style={[styles.profileSub, { color: theme.textDim }]}>
-                {streak.currentStreak}-day streak · {streak.totalBeaten} alarms beaten
-              </Text>
-            </View>
-            <View style={[styles.streakChip, { backgroundColor: theme.chipBg }]}>
-              {Icon.flame(theme.chipText)}
-              <Text style={[styles.streakText, { color: theme.chipText }]}>{streak.currentStreak}</Text>
+
+            <View style={[styles.profileStats, { borderTopColor: theme.surfaceBorder }]}>
+              <ProfileStat value={streak.currentStreak} label="DAY STREAK" theme={theme} />
+              <View style={[styles.profileStatDivider, { backgroundColor: theme.surfaceBorder }]} />
+              <ProfileStat value={streak.longestStreak} label="BEST" theme={theme} />
+              <View style={[styles.profileStatDivider, { backgroundColor: theme.surfaceBorder }]} />
+              <ProfileStat value={streak.totalBeaten} label="BEATEN" theme={theme} />
             </View>
           </View>
         </Animated.View>
@@ -549,7 +611,7 @@ export default function SettingsScreen({
             title="Sound"
             subtitle={getAlarmSound(defaultSound).name}
             right={<Chevron theme={theme} />}
-            onPress={() => setSoundPickerOpen(true)}
+            onPress={() => router.push('/settings/sounds' as any)}
             theme={theme}
           />
           <Divider theme={theme} />
@@ -558,7 +620,7 @@ export default function SettingsScreen({
             title="Haptics"
             subtitle="Vibrate while ringing"
             right={
-              <Toggle value={haptics} onChange={() => setHaptics((h) => !h)} theme={theme} />
+              <Toggle value={haptics} onChange={toggleHaptics} theme={theme} />
             }
             theme={theme}
           />
@@ -570,7 +632,7 @@ export default function SettingsScreen({
             right={
               <Toggle
                 value={autoSilence}
-                onChange={() => setAutoSilence((a) => !a)}
+                onChange={toggleAutoSilence}
                 theme={theme}
               />
             }
@@ -580,9 +642,9 @@ export default function SettingsScreen({
           <Row
             icon={Icon.target(theme.accent)}
             title="Default challenge"
-            subtitle="Equations · Standard"
+            subtitle={`${CHALLENGE_NAMES[defaultChallenge] || 'Equations'} · ${defaultDifficulty.charAt(0).toUpperCase() + defaultDifficulty.slice(1)}`}
             right={<Chevron theme={theme} />}
-            onPress={() => {}}
+            onPress={() => router.push('/settings/challenge' as any)}
             theme={theme}
           />
         </Group>
@@ -602,50 +664,15 @@ export default function SettingsScreen({
             icon={Icon.shield(theme.accent)}
             title="Privacy"
             right={<Chevron theme={theme} />}
-            onPress={() => {}}
+            onPress={() => router.push('/settings/privacy' as any)}
             theme={theme}
           />
           <Divider theme={theme} />
           <Row
             icon={Icon.info(theme.accent)}
             title="About"
-            subtitle="Version 1.0.0"
-            right={<Chevron theme={theme} />}
+            subtitle={`Version ${Constants.expoConfig?.version ?? '1.0.0'}`}
             onPress={() => {}}
-            theme={theme}
-          />
-        </Group>
-
-        {/* Developer / debug tools */}
-        <Group label="DEVELOPER / DEBUG" delay={270} theme={theme}>
-          <Row
-            icon={Icon.hammer(theme.accent)}
-            title="Seed 70-Day Demo Data"
-            subtitle="Generates 70 days of mock history"
-            right={<Chevron theme={theme} />}
-            onPress={async () => {
-              try {
-                await seedDemoInsightsData();
-              } catch (err) {
-                console.error('Failed to seed:', err);
-              }
-            }}
-            theme={theme}
-          />
-          <Divider theme={theme} />
-          <Row
-            icon={Icon.trash(theme.danger)}
-            title="Clear All Database Data"
-            subtitle="Resets all alarms, history & streaks"
-            danger
-            right={<Chevron theme={theme} />}
-            onPress={async () => {
-              try {
-                await clearAllDatabaseData();
-              } catch (err) {
-                console.error('Failed to clear:', err);
-              }
-            }}
             theme={theme}
           />
         </Group>
@@ -656,14 +683,6 @@ export default function SettingsScreen({
 
         <View style={{ height: 40 }} />
       </Animated.ScrollView>
-
-      <SoundPicker
-        visible={soundPickerOpen}
-        selectedId={defaultSound}
-        onSelect={handleSelectSound}
-        onClose={() => setSoundPickerOpen(false)}
-        theme={theme}
-      />
     </View>
   );
 }
@@ -712,13 +731,16 @@ const styles = StyleSheet.create({
 
   /* Profile */
   profile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
     borderRadius: 22,
     borderWidth: 1,
     padding: 16,
     marginBottom: 8,
+    gap: 16,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
   },
   avatar: {
     width: 48,
@@ -731,14 +753,40 @@ const styles = StyleSheet.create({
     fontFamily: 'InstrumentSerif_400Regular_Italic',
     fontSize: 26,
   },
+  profileGreeting: {
+    fontFamily: 'SpaceMono_400Regular',
+    fontSize: 9.5,
+    letterSpacing: 1.8,
+    marginBottom: 3,
+  },
   profileName: {
     fontFamily: 'Sora_600SemiBold',
-    fontSize: 16,
+    fontSize: 18,
   },
-  profileSub: {
-    fontFamily: 'Sora_400Regular',
-    fontSize: 12.5,
-    marginTop: 2,
+  profileStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    paddingTop: 14,
+  },
+  profileStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  profileStatValue: {
+    fontFamily: 'InstrumentSerif_400Regular_Italic',
+    fontSize: 24,
+    lineHeight: 28,
+  },
+  profileStatLabel: {
+    fontFamily: 'SpaceMono_400Regular',
+    fontSize: 8.5,
+    letterSpacing: 1.2,
+    marginTop: 3,
+  },
+  profileStatDivider: {
+    width: 1,
+    height: 26,
   },
   streakChip: {
     flexDirection: 'row',

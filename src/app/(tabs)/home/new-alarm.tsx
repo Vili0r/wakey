@@ -34,8 +34,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { CHALLENGE_ICONS, CHALLENGES } from './challenge';
 import { db } from '@/db/db';
-import { alarms as alarmsTable } from '@/db/schema';
+import { alarms as alarmsTable, settings as settingsTable } from '@/db/schema';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { eq } from 'drizzle-orm';
 
 
 /* ------------------------------------------------------------------ */
@@ -92,6 +93,12 @@ export default function CreateAlarmScreen({
   // Load alarms reactively using useLiveQuery
   const { data: dbAlarms = [] } = useLiveQuery(db.select().from(alarmsTable));
 
+  // Load settings reactively using useLiveQuery
+  const { data: settingsRows = [] } = useLiveQuery(
+    db.select().from(settingsTable).where(eq(settingsTable.id, 1))
+  );
+  const dbSettings = settingsRows[0];
+
   const alarms = useMemo(() => {
     return dbAlarms.map(mapDbToUiAlarm);
   }, [dbAlarms]);
@@ -124,6 +131,9 @@ export default function CreateAlarmScreen({
       isDark={isDark}
       width={width}
       params={params}
+      defaultChallenge={dbSettings?.defaultChallenge ?? 'math'}
+      defaultDifficulty={(dbSettings?.defaultDifficulty as 'gentle' | 'standard' | 'brutal') ?? 'standard'}
+      defaultSoundId={dbSettings?.defaultSoundId ?? DEFAULT_SOUND_ID}
       onClose={onClose}
       onSave={onSave}
     />
@@ -137,6 +147,9 @@ function AlarmForm({
   isDark,
   width,
   params,
+  defaultChallenge,
+  defaultDifficulty,
+  defaultSoundId,
   onClose,
   onSave,
 }: {
@@ -146,6 +159,9 @@ function AlarmForm({
   isDark: boolean;
   width: number;
   params: { id?: string; challengeId?: string };
+  defaultChallenge: string;
+  defaultDifficulty: 'gentle' | 'standard' | 'brutal';
+  defaultSoundId: string;
   onClose?: () => void;
   onSave?: (alarm: NewAlarm) => void;
 }) {
@@ -176,25 +192,29 @@ function AlarmForm({
   });
   const [challengeId, setChallengeId] = useState<string>(() => {
     if (editAlarm) return getChallengeId(editAlarm.challenge);
-    return '';
+    return defaultChallenge || '';
   });
+
+  const challengeTouched = useRef(false);
+  const difficultyTouched = useRef(false);
+  const soundTouched = useRef(false);
 
   useEffect(() => {
     if (params.challengeId) {
       setChallengeId(params.challengeId);
+      challengeTouched.current = true;
     }
   }, [params.challengeId]);
 
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>(() => {
     if (editAlarm) return editAlarm.difficulty || 'standard';
-    return 'standard';
+    return defaultDifficulty || 'standard';
   });
   const [soundId, setSoundId] = useState<string>(() => {
     if (editAlarm) return editAlarm.soundId ?? DEFAULT_SOUND_ID;
-    return DEFAULT_SOUND_ID;
+    return defaultSoundId || DEFAULT_SOUND_ID;
   });
   const [soundPickerOpen, setSoundPickerOpen] = useState(false);
-  const soundTouched = useRef(false);
   const [now, setNow] = useState(() => new Date());
 
   const [findItemIds, setFindItemIds] = useState<string[]>(() => {
@@ -211,18 +231,27 @@ function AlarmForm({
     prevChallengeId.current = challengeId;
   }, [challengeId]);
 
-  // New alarms inherit the user's default sound from settings — but don't clobber
-  // a pick the user already made before this async load resolved.
+  // Synchronize with database settings defaults for new alarms reactively
   useEffect(() => {
-    if (editAlarm) return;
-    let cancelled = false;
-    getDefaultSoundId().then((id) => {
-      if (!cancelled && !soundTouched.current) setSoundId(id);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [editAlarm]);
+    if (isEdit) return;
+    if (!challengeTouched.current && defaultChallenge) {
+      setChallengeId(defaultChallenge);
+    }
+  }, [isEdit, defaultChallenge]);
+
+  useEffect(() => {
+    if (isEdit) return;
+    if (!difficultyTouched.current && defaultDifficulty) {
+      setDifficulty(defaultDifficulty);
+    }
+  }, [isEdit, defaultDifficulty]);
+
+  useEffect(() => {
+    if (isEdit) return;
+    if (!soundTouched.current && defaultSoundId) {
+      setSoundId(defaultSoundId);
+    }
+  }, [isEdit, defaultSoundId]);
 
   const pickSound = (id: string) => {
     soundTouched.current = true;
@@ -512,7 +541,10 @@ function AlarmForm({
           <Segmented
             options={DIFFICULTIES.map((d) => DIFFICULTY_LABELS[d])}
             selectedIndex={DIFFICULTIES.indexOf(difficulty)}
-            onChange={(i) => setDifficulty(DIFFICULTIES[i])}
+             onChange={(i) => {
+               difficultyTouched.current = true;
+               setDifficulty(DIFFICULTIES[i]);
+             }}
             theme={theme}
             width={width - 40}
           />
