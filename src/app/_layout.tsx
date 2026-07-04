@@ -29,7 +29,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, AppState, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, AppState, Platform, Text, useColorScheme, View } from 'react-native';
+import Purchases from 'react-native-purchases';
 import { initExecutorch, models, useObjectDetection, usePoseEstimation, YOLO26N } from 'react-native-executorch';
 import { ExpoResourceFetcher } from 'react-native-executorch-expo-resource-fetcher';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -79,6 +80,16 @@ export default function RootLayout() {
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [loaded, error]);
+
+  // Configure RevenueCat
+  useEffect(() => {
+    Purchases.setDebugLogsEnabled(true);
+    if (Platform.OS === 'ios') {
+      Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY || 'public_ios_key_here' });
+    } else if (Platform.OS === 'android') {
+      Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY || 'public_android_key_here' });
+    }
+  }, []);
 
   // ── Active alarm overlay state ───────────────────────────────────────
   // Read the shared store for our own logic (cold-launch dedupe, debug). The

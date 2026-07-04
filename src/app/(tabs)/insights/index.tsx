@@ -13,7 +13,7 @@ import { db } from '@/db/db';
 import { alarmEvents, alarms as alarmsTable, streakDays, streakState, ChallengeType } from '@/db/schema';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { eq, desc } from 'drizzle-orm';
-import { getLocalDayStr, seedDemoInsightsData } from '@/utils/alarm-store';
+import { getLocalDayStr } from '@/utils/alarm-store';
 import {
   Platform,
   Pressable,
@@ -1033,38 +1033,8 @@ export default function InsightsScreen({
                 paddingHorizontal: 20,
               }}
             >
-              Wake up with Wakey to build your streak, or generate demo data to see insights in action.
+              Wake up with Wakey to build your streak and see insights in action.
             </Text>
-            <Pressable
-              onPress={async () => {
-                try {
-                  await seedDemoInsightsData();
-                } catch (err) {
-                  console.error(err);
-                }
-              }}
-              style={({ pressed }) => [
-                {
-                  backgroundColor: theme.chipBg,
-                  borderColor: theme.accent,
-                  borderWidth: 1,
-                  paddingVertical: 10,
-                  paddingHorizontal: 20,
-                  borderRadius: 99,
-                  opacity: pressed ? 0.8 : 1,
-                },
-              ]}
-            >
-              <Text
-                style={{
-                  color: theme.chipText,
-                  fontFamily: 'Sora_600SemiBold',
-                  fontSize: 13,
-                }}
-              >
-                Seed 70-Day Demo Data
-              </Text>
-            </Pressable>
           </Animated.View>
         )}
 

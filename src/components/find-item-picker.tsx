@@ -58,9 +58,9 @@ export default function FindItemPicker({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <View
+        <Pressable
           style={[styles.sheet, { backgroundColor: theme.bg, borderColor: theme.surfaceBorder }]}
-          onStartShouldSetResponder={() => true}
+          onPress={() => {}}
         >
           <View style={styles.grabber}>
             <View style={[styles.grabberBar, { backgroundColor: theme.surfaceBorder }]} />
@@ -123,7 +123,7 @@ export default function FindItemPicker({
               Done · {selectedIds.length} selected
             </Text>
           </Pressable>
-        </View>
+        </Pressable>
       </Pressable>
     </Modal>
   );

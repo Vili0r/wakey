@@ -9,13 +9,38 @@ import { PaywallShell } from '@/components/onboarding/paywall-shell';
 import { PRICING } from '@/onboarding/pricing';
 import { scheduleTrialEndReminder } from '@/onboarding/reminder';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Purchases, { PurchasesOfferings } from 'react-native-purchases';
 import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
 export default function PaywallReminder() {
   const [busy, setBusy] = useState(false);
+  const [offerings, setOfferings] = useState<PurchasesOfferings | null>(null);
+
+  useEffect(() => {
+    async function getOfferings() {
+      try {
+        const offs = await Purchases.getOfferings();
+        if (offs.current !== null && offs.current.availablePackages.length !== 0) {
+          setOfferings(offs);
+        }
+      } catch (e) {
+        console.error('Error fetching offerings', e);
+      }
+    }
+    getOfferings();
+  }, []);
+
+  const annualPackage = offerings?.current?.annual;
+  const yearlyPrice = annualPackage ? annualPackage.product.priceString : PRICING.yearly;
+  const perMonthPrice = annualPackage
+    ? new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: annualPackage.product.currencyCode,
+      }).format(annualPackage.product.price / 12)
+    : PRICING.perMonth;
 
   const onContinue = async () => {
     if (busy) return;
@@ -34,7 +59,7 @@ export default function PaywallReminder() {
       onCta={onContinue}
       belowCta={
         <Text style={styles.price}>
-          Just {PRICING.yearly} per year ({PRICING.perMonth}/mo)
+          Just {yearlyPrice} per year ({perMonthPrice}/mo)
         </Text>
       }
     >

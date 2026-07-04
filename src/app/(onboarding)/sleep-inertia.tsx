@@ -1,97 +1,108 @@
-/**
- * Screen 10 — reframe the struggle as biology, not a character flaw. The
- * cortisol awakening response (a real ~50% post-waking cortisol surge) takes the
- * blame off the user right after they've admitted the hardest part of their
- * morning, and sets up Wakey as the way to ride that boost instead of sleeping
- * through it. The SVG plots that surge: flat while asleep, a sharp peak on
- * waking, then a gentle decline.
- */
 
 import { OB, OnboardingShell } from '@/components/onboarding/onboarding-shell';
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ReduceMotion } from 'react-native-reanimated';
-import Svg, {
-  Circle,
-  Defs,
-  Line,
-  LinearGradient,
-  Path,
-  Stop,
-} from 'react-native-svg';
 
-// The cortisol-awakening curve. `CURVE` is the stroke; `AREA` closes it to the
-// baseline for the soft fill underneath.
-const CURVE =
-  'M8 96 C40 94 56 92 70 84 C88 74 96 30 112 26 C134 20 156 52 180 62 C196 68 206 70 212 72';
-const AREA = `${CURVE} L212 104 L8 104 Z`;
-const PEAK = { x: 112, y: 26 };
+const BARS = [
+  0.08, 0.1, 0.12, 0.22, 0.32, 0.45, 0.6, 0.75, 0.9, 1.0, 1.05, 1.0, 0.9, 0.75, 0.6, 0.45, 0.32, 0.22, 0.12, 0.1, 0.08
+];
+
+const YELLOW_INDEX = 17;
+const GREEN_INDEX = 3;
 
 export default function SleepInertia() {
+  const [step, setStep] = useState(1);
+
+  const handleCta = () => {
+    if (step === 1) {
+      setStep(2);
+    } else {
+      router.push('/demo-intro');
+    }
+  };
+
+  const ctaLabel = step === 1 ? "Continue" : "Show me the solution";
+
+  // Light mode friendly colors
+  const defaultBarColor = 'rgba(24, 28, 46, 0.08)';
+  const yellowColor = '#FFC107'; 
+  const greenColor = '#34C759';  
+
   return (
     <OnboardingShell
       progress={0.6}
       showBack
       center
-      ctaLabel="Continue"
-      onCta={() => router.push('/q-currentwake')}
+      ctaLabel={ctaLabel}
+      onCta={handleCta}
     >
       <View style={styles.body}>
-        <Animated.View
-          entering={FadeIn.duration(600).reduceMotion(ReduceMotion.System)}
-          style={styles.chart}
+        <Animated.View 
+          entering={FadeInDown.duration(420).reduceMotion(ReduceMotion.System)}
+          style={styles.header}
         >
-          <Svg width={232} height={124} viewBox="0 0 220 116">
-            <Defs>
-              <LinearGradient id="stroke" x1="0" y1="0" x2="1" y2="0">
-                <Stop offset="0" stopColor={OB.accent} />
-                <Stop offset="1" stopColor={OB.accentDeep} />
-              </LinearGradient>
-              <LinearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor={OB.accent} stopOpacity={0.22} />
-                <Stop offset="1" stopColor={OB.accent} stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-
-            {/* baseline */}
-            <Line x1={8} y1={104} x2={212} y2={104} stroke={OB.border} strokeWidth={1.5} />
-
-            {/* "you wake" marker under the rise */}
-            <Line
-              x1={78}
-              y1={20}
-              x2={78}
-              y2={104}
-              stroke={OB.accentSoft}
-              strokeWidth={2}
-              strokeDasharray="2 5"
-            />
-
-            <Path d={AREA} fill="url(#fill)" />
-            <Path
-              d={CURVE}
-              fill="none"
-              stroke="url(#stroke)"
-              strokeWidth={4}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-
-            {/* peak of the surge */}
-            <Circle cx={PEAK.x} cy={PEAK.y} r={7} fill={OB.accentDeep} />
-            <Circle cx={PEAK.x} cy={PEAK.y} r={3} fill={OB.onAccent} />
-          </Svg>
+          <Text style={styles.eyebrow}>Based on user research</Text>
+          {step === 1 && (
+            <Text style={styles.title}>You take longer to get up than 89% of people</Text>
+          )}
         </Animated.View>
 
         <Animated.Text
-          entering={FadeInDown.delay(280).duration(480).reduceMotion(ReduceMotion.System)}
+          entering={FadeInDown.delay(100).duration(480).reduceMotion(ReduceMotion.System)}
           style={styles.subtitle}
         >
-          In the first minutes after you wake, your body releases a natural surge
-          of cortisol — alertness chemistry that peaks about 50% higher to get you
-          moving. Snooze through it and you waste the one boost biology hands you
-          for free.
+          {step === 1 && (
+            <>
+            {'\n'}It seems waking up is a real struggle for you.
+            </>
+          )}
+          {step === 2 && (
+            <Animated.Text entering={FadeIn.duration(400)} style={styles.title}>
+              {'\n'}But don't worry! Wakey will help you reach this goal.
+            </Animated.Text>
+          )}
         </Animated.Text>
+
+        <Animated.View
+          entering={FadeIn.duration(600).reduceMotion(ReduceMotion.System)}
+          style={styles.chartContainer}
+        >
+          <View style={styles.chart}>
+            {BARS.map((height, i) => {
+              const isYellow = i === YELLOW_INDEX;
+              const isGreen = step === 2 && i === GREEN_INDEX;
+              const color = isYellow ? yellowColor : isGreen ? greenColor : defaultBarColor;
+              
+              return (
+                <View key={i} style={styles.barColumn}>
+                  {/* Pointer */}
+                  <View style={styles.pointerContainer}>
+                    {isYellow && (
+                      <View style={[styles.triangleDown, { borderTopColor: yellowColor }]} />
+                    )}
+                    {isGreen && (
+                      <Animated.View entering={FadeInDown.duration(400)} style={[styles.triangleDown, { borderTopColor: greenColor }]} />
+                    )}
+                  </View>
+                  
+                  {/* Bar */}
+                  {isGreen ? (
+                    <Animated.View entering={FadeIn.duration(400)} style={[styles.bar, { height: height * 90, backgroundColor: color }]} />
+                  ) : (
+                    <View style={[styles.bar, { height: height * 90, backgroundColor: color }]} />
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.labels}>
+            <Text style={styles.label}>Early Bird</Text>
+            <Text style={styles.label}>Heavy Sleeper</Text>
+          </View>
+        </Animated.View>
       </View>
     </OnboardingShell>
   );
@@ -99,13 +110,81 @@ export default function SleepInertia() {
 
 const styles = StyleSheet.create({
   body: { alignItems: 'center' },
-  chart: { marginBottom: 32 },
+  header: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  eyebrow: {
+    fontFamily: OB.sans,
+    fontSize: 13,
+    color: OB.textDim,
+    marginBottom: 8,
+  },
+  title: {
+    fontFamily: OB.sansBold,
+    fontSize: 26,
+    lineHeight: 34,
+    color: OB.text,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+  },
   subtitle: {
     fontFamily: OB.sans,
-    fontSize: 15.5,
-    lineHeight: 23,
+    fontSize: 16,
+    lineHeight: 24,
     color: OB.textDim,
     textAlign: 'center',
+    marginBottom: 48,
+  },
+  subtitleBold: {
+    fontFamily: OB.sansBold,
+    color: OB.text,
+  },
+  chartContainer: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  chart: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 110,
+    gap: 4,
+  },
+  barColumn: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    width: 8,
+  },
+  bar: {
+    width: 8,
+    borderRadius: 2,
+  },
+  pointerContainer: {
+    height: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  triangleDown: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  labels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: 250,
     marginTop: 16,
+  },
+  label: {
+    fontFamily: OB.sans,
+    fontSize: 12,
+    color: OB.textDim,
   },
 });

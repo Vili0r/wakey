@@ -226,7 +226,10 @@ function AlarmForm({
   const prevChallengeId = useRef(challengeId);
   useEffect(() => {
     if (challengeId === 'find-item' && prevChallengeId.current !== 'find-item') {
-      setFindItemPickerOpen(true);
+      const timer = setTimeout(() => {
+        setFindItemPickerOpen(true);
+      }, 400);
+      return () => clearTimeout(timer);
     }
     prevChallengeId.current = challengeId;
   }, [challengeId]);

@@ -366,6 +366,24 @@ export const safeSnoozeActivity = {
 export function scheduleAlarmNative(alarm: Alarm) {
   const isOneTime = alarm.isOneTime || !alarm.days || alarm.days.length === 0;
 
+  // Map soundId to native filename copied into bundle
+  const soundNameMap: Record<string, string> = {
+    sunrise: 'alarm.wav',
+    classic_beep: 'classic_beep.wav',
+    mechanical_bell: 'mechanical_bell.wav',
+    gentle_chimes: 'gentle_chimes.wav',
+    warble_siren: 'warble_siren.wav',
+    digital_pulse: 'digital_pulse.wav',
+    morning_glow: 'morning-clock-alarm.wav',
+    stardust: 'star-dust-alarm-clock.mp3',
+    melody: 'musical_alarm.mp3',
+    chime_up: 'musical-alarm.mp3',
+    chiptune: 'chiptune-alarm-clock.mp3',
+    digital_buzzer: 'digital-alarm-buzzer.wav',
+    red_alert: 'retro-game-emergency-alarm.wav',
+  };
+  const soundName = alarm.soundId ? soundNameMap[alarm.soundId] : undefined;
+
   if (isOneTime) {
     const now = new Date();
     const target = new Date();
@@ -382,6 +400,7 @@ export function scheduleAlarmNative(alarm: Alarm) {
       launchAppOnSnooze: false,
       doSnoozeIntent: true,
       snoozeDuration: 540,
+      soundName,
     });
   } else {
     safeAlarmKit.scheduleRepeatingAlarm({
@@ -394,6 +413,7 @@ export function scheduleAlarmNative(alarm: Alarm) {
       launchAppOnSnooze: false,
       doSnoozeIntent: true,
       snoozeDuration: 540,
+      soundName,
     });
   }
 }

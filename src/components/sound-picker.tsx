@@ -61,13 +61,12 @@ export default function SoundPicker({
       onRequestClose={handleClose}
     >
       <Pressable style={styles.backdrop} onPress={handleClose}>
-        <View
+        <Pressable
           style={[
             styles.sheet,
             { backgroundColor: theme.bg, borderColor: theme.surfaceBorder },
           ]}
-          // Swallow taps inside the sheet so they don't close it.
-          onStartShouldSetResponder={() => true}
+          onPress={() => {}}
         >
           <View style={styles.grabber}>
             <View style={[styles.grabberBar, { backgroundColor: theme.surfaceBorder }]} />
@@ -130,7 +129,7 @@ export default function SoundPicker({
           >
             <Text style={[styles.doneText, { color: theme.fabText }]}>Done</Text>
           </Pressable>
-        </View>
+        </Pressable>
       </Pressable>
     </Modal>
   );

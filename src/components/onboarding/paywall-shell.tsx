@@ -1,10 +1,3 @@
-/**
- * paywall-shell — shared chrome for the three-step paywall. Unlike the survey
- * OnboardingShell, this drops the progress bar, leads with a bold sans headline,
- * and pins a black CTA footer with an assurance line above and free-form copy
- * below (legal links, price, "View all plans"). Light-mode only.
- */
-
 import { OB } from '@/components/onboarding/onboarding-shell';
 import { Haptics } from '@/utils/alarm-store';
 import { LinearGradient } from 'expo-linear-gradient';

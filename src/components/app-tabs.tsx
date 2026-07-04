@@ -13,9 +13,9 @@ export default function AppTabs() {
       indicatorColor={colors.backgroundElement}
       labelStyle={{ selected: { color: colors.text } }}>
       <NativeTabs.Trigger name="home">
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Alarms</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/home.png')}
+          sf={{ default: "alarm.waves.left.and.right", selected: "alarm.waves.left.and.right.fill" }}
           renderingMode="template"
         />
       </NativeTabs.Trigger>
@@ -23,7 +23,7 @@ export default function AppTabs() {
       <NativeTabs.Trigger name="insights">
         <NativeTabs.Trigger.Label>Insights</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          sf={{ default: "chart.bar", selected: "chart.bar.fill" }}
+          sf={{ default: "chart.bar.fill", selected: "chart.bar.fill" }}
         />
       </NativeTabs.Trigger>
 
