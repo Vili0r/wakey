@@ -49,20 +49,6 @@ export default function Layout() {
                     ),
                 }}
             />
-            <Stack.Screen
-                name="challenge"
-                options={{
-                    contentStyle: { backgroundColor: theme.background },
-                    headerShown: true,
-                    presentation: 'formSheet',
-                    sheetAllowedDetents: [0.9],
-                    sheetGrabberVisible: true,
-                    title: '',
-                    headerRight: () => (
-                        <Button title="Done" onPress={() => router.dismiss()} color={theme.text} />
-                    ),
-                }}
-            />
         </Stack>
       </>
     );

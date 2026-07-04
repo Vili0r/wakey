@@ -489,8 +489,6 @@ export default function SettingsScreen({
   const haptics = dbSettings?.hapticsEnabled ?? true;
   const autoSilence = (dbSettings?.autoSilenceSeconds ?? 0) > 0;
   const defaultSound = dbSettings?.defaultSoundId ?? 'sunrise';
-  const defaultChallenge = dbSettings?.defaultChallenge ?? 'math';
-  const defaultDifficulty = dbSettings?.defaultDifficulty ?? 'standard';
 
   const toggleHaptics = async () => {
     try {
@@ -638,28 +636,10 @@ export default function SettingsScreen({
             }
             theme={theme}
           />
-          <Divider theme={theme} />
-          <Row
-            icon={Icon.target(theme.accent)}
-            title="Default challenge"
-            subtitle={`${CHALLENGE_NAMES[defaultChallenge] || 'Equations'} · ${defaultDifficulty.charAt(0).toUpperCase() + defaultDifficulty.slice(1)}`}
-            right={<Chevron theme={theme} />}
-            onPress={() => router.push('/settings/challenge' as any)}
-            theme={theme}
-          />
         </Group>
 
         {/* Account */}
         <Group label="ACCOUNT" delay={210} theme={theme}>
-          <Row
-            icon={Icon.star(theme.accent)}
-            title="Wakey Plus"
-            subtitle="Unlock every challenge & sound"
-            right={<Chevron theme={theme} />}
-            onPress={() => {}}
-            theme={theme}
-          />
-          <Divider theme={theme} />
           <Row
             icon={Icon.shield(theme.accent)}
             title="Privacy"

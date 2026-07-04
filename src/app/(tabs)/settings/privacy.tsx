@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import { eq } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import React, { useEffect, useState } from 'react';
+import Constants from 'expo-constants';
 import {
   Alert,
   AppState,
@@ -562,7 +563,7 @@ export default function PrivacyScreen() {
         </Group>
 
         <Text style={[styles.footer, { color: theme.textFaint }]}>
-          Wakey Privacy · Version 1.0.0
+          Wakey Privacy · Version {Constants.expoConfig?.version ?? '1.0.0'}
         </Text>
       </ScrollView>
     </View>
